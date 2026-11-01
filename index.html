@@ -159,6 +159,26 @@ table.rep{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}.re
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 @media (min-width:700px){.main{padding-top:24px}.qt{font-size:40px}}
+input.answer{border:2px solid var(--sea);font-family:var(--disp);font-size:36px;text-align:center;min-height:64px;padding:6px 10px}input.answer[readonly]{cursor:default}
+.hint.center{text-align:center}
+/* Laptop and desktop: side menu, wider pages, centred dialogs, typing instead of the on-screen keypad */
+@media (min-width:900px){
+  :root{--hdr:62px}
+  body{font-size:17px}
+  .top{padding-left:28px;padding-right:28px}
+  .bar{top:var(--hdr);bottom:0;right:auto;width:220px;flex-direction:column;justify-content:flex-start;gap:4px;padding:16px 10px;border-top:0;border-right:1px solid var(--line)}
+  .tab{flex:none;flex-direction:row;justify-content:flex-start;gap:12px;min-height:48px;padding:8px 14px;font-size:16px;border-top:0;border-left:4px solid transparent;border-radius:10px}
+  .tab.on{border-left-color:var(--sea);background:var(--sea-l)}
+  .main{max-width:none;margin:0 0 0 220px;padding:28px 40px 56px}
+  .main>.stack{max-width:1040px}
+  .list{display:grid;grid-template-columns:1fr 1fr;gap:10px}.list .empty,.list .pad{grid-column:1/-1}
+  .cards{grid-template-columns:repeat(4,1fr)}
+  table.rep{min-width:0}
+  #sheet{align-items:center}.sheet-box{border-radius:20px;max-width:580px;max-height:88vh}
+  .tview{max-width:760px}.qt{font-size:46px}.readtext{font-size:80px}.readtext.long{font-size:36px}.passage{font-size:28px}
+  .login{margin-top:48px}
+  #toast{bottom:36px}
+}
 </style>
 </head>
 <body>
@@ -548,6 +568,7 @@ function h(tag, attrs, ...kids) {
   kids.flat(Infinity).forEach(c => { if (c == null || c === false) return; e.append(c.nodeType ? c : document.createTextNode(String(c))); });
   return e;
 }
+const isDesktop = () => !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine) and (min-width: 900px)').matches);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 const pad3 = n => String(n).padStart(3, '0');
 function todayISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
@@ -947,9 +968,17 @@ function deviceView(T) {
     let disp;
     if (it.t === 'mc') { body.append(h('div', { class: 'opts' }, it.opts.map(o => h('button', { class: 'opt' + (T.ans[T.i] === o ? ' on' : ''), onclick: () => { T.ans[T.i] = o; draw(); } }, o)))); }
     else {
-      disp = h('div', { class: 'answer', 'aria-live': 'polite' }, T.ans[T.i] || ' ');
-      body.append(disp, h('div', { class: 'keys' }, keysFor(T.level).map(k => k === '' ? h('span', {}) : h('button', { class: 'key' + (k === '⌫' ? ' del' : ''), 'aria-label': k === ' ' ? 'space' : k === '⌫' ? 'delete' : k, onclick: () => { const cur = T.ans[T.i] || ''; T.ans[T.i] = k === '⌫' ? cur.slice(0, -1) : (cur + k).slice(0, 14); disp.textContent = T.ans[T.i] || ' '; } }, k === ' ' ? '␣' : k))));
-      setKey(e => { if (/^[0-9.\/]$/.test(e.key) || e.key === '-' || e.key === ' ') { T.ans[T.i] = ((T.ans[T.i] || '') + (e.key === '-' ? MINUS : e.key)).slice(0, 14); disp.textContent = T.ans[T.i]; e.preventDefault(); } else if (e.key === 'Backspace') { T.ans[T.i] = (T.ans[T.i] || '').slice(0, -1); disp.textContent = T.ans[T.i] || ' '; } else if (e.key === 'Enter') { next(); } });
+      const desk = isDesktop();
+      disp = h('input', { class: 'answer', type: 'text', value: T.ans[T.i] || '', readonly: !desk, inputmode: desk ? 'text' : 'none', autocomplete: 'off', 'aria-label': 'Answer' });
+      if (desk) {
+        disp.addEventListener('input', e => { T.ans[T.i] = e.target.value.replace(/-/g, MINUS).slice(0, 14); });
+        disp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); next(); } });
+        body.append(disp, h('p', { class: 'hint center' }, 'Type the answer and press Enter. Use / for fractions, e.g. 3/4.')); setTimeout(() => disp.focus(), 0);
+      } else {
+        const put = v => { T.ans[T.i] = v; disp.value = v; };
+        body.append(disp, h('div', { class: 'keys' }, keysFor(T.level).map(k => k === '' ? h('span', {}) : h('button', { class: 'key' + (k === '⌫' ? ' del' : ''), 'aria-label': k === ' ' ? 'space' : k === '⌫' ? 'delete' : k, onclick: () => { const cur = T.ans[T.i] || ''; put(k === '⌫' ? cur.slice(0, -1) : (cur + k).slice(0, 14)); } }, k === ' ' ? '␣' : k))));
+        setKey(e => { if (/^[0-9.\/]$/.test(e.key) || e.key === '-' || e.key === ' ') { put(((T.ans[T.i] || '') + (e.key === '-' ? MINUS : e.key)).slice(0, 14)); e.preventDefault(); } else if (e.key === 'Backspace') { put((T.ans[T.i] || '').slice(0, -1)); } else if (e.key === 'Enter') { next(); } });
+      }
     }
     foot.append(h('button', { class: 'btn', disabled: T.i === 0, onclick: () => { T.i--; draw(); } }, 'Back'), h('button', { class: 'btn primary', onclick: next }, T.i === T.items.length - 1 ? 'Finish' : 'Next'));
   };
@@ -1005,7 +1034,7 @@ function runReading(l, phase, lang, start) {
   const wrap = h('div', { class: 'tview' }); const body = h('div', { class: 'tbody' }); const foot = h('div', { class: 'tfoot' }); const bar = h('div', { class: 'prog' }, h('i', {}));
   const lvInfo = () => READ_LEVELS[R.lv - 1];
   const draw = () => {
-    body.innerHTML = ''; foot.innerHTML = ''; const info = lvInfo(); const items = bank[R.lv];
+    setKey(null); body.innerHTML = ''; foot.innerHTML = ''; const info = lvInfo(); const items = bank[R.lv];
     if (R.lv === 5) {
       const text = items[0]; const words = wordCount(text);
       bar.firstChild.style.width = '80%';
@@ -1020,6 +1049,7 @@ function runReading(l, phase, lang, start) {
     body.append(h('div', { class: 'cnt' }, 'Level ' + R.lv + ' · ' + info.name + ' · ' + (i + 1) + ' of ' + n + ' (needs ' + info.need + ')'), h('div', { class: 'readtext' + (R.lv >= 4 ? ' long' : '') }, text),
       h('button', { class: 'btn mic', onclick: () => listen(R, text, i, draw) }, '🎤 Listen (optional)'), micBox);
     foot.append(h('button', { class: 'btn bad', onclick: () => mark(0) }, '✘ Not yet'), h('button', { class: 'btn good', onclick: () => mark(1) }, '✔ Correct'));
+    if (isDesktop()) { body.append(h('p', { class: 'hint center' }, 'Keyboard: Y or Enter = Correct, N = Not yet')); setKey(e => { const k = String(e.key).toLowerCase(); if (k === 'y' || k === 'enter') { e.preventDefault(); mark(1); } else if (k === 'n') { e.preventDefault(); mark(0); } }); }
   };
   const mark = v => { R.marks[R.idx] = v; const m = R.mic[R.idx]; if (m === 0 || m === 1) { R.micN++; if (m === v) R.micAgree++; } if (R.idx < bank[R.lv].length - 1) { R.idx++; draw(); } else endLevel(); };
   const endLevel = () => {
