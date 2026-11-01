@@ -516,18 +516,18 @@ const CONFIG = {
   // Paste each district's Apps Script web app URL (ends with /exec) in "url".
   DISTRICTS: [
     { code: 'ALC', name: 'Alcantara', url: 'https://script.google.com/macros/s/AKfycbzzJn38tC46ftiXdXrjgndOM7s7CfcAhcEUpKdnW1SyhlOW3GBUXtBG9D9QllZTOUHN8g/exec' },
-    { code: 'BAN', name: 'Banton', url: '' },
-    { code: 'CAM', name: 'Cajidiocan-Magdiwang', url: '' },
-    { code: 'CON', name: 'Concepcion', url: '' },
-    { code: 'COR', name: 'Corcuera', url: '' },
-    { code: 'LOO', name: 'Looc', url: '' },
-    { code: 'ODN', name: 'Odiongan North', url: '' },
-    { code: 'ODS', name: 'Odiongan South', url: '' },
-    { code: 'ROM', name: 'Romblon', url: '' },
-    { code: 'SSC', name: 'San Agustin-Santa Maria-Calatrava', url: '' },
-    { code: 'SAN', name: 'San Andres', url: '' },
-    { code: 'SFD', name: 'San Fernando', url: '' },
-    { code: 'SJF', name: 'San Jose-Santa Fe', url: '' },
+    { code: 'BAN', name: 'Banton', url: 'https://script.google.com/macros/s/AKfycbwOvjAZYghkFTT_oD6-H6QPWmRZlBnMCg2MNq9Dp2T7prZguo2QUVFecNASZ4kb7mAf/exec' },
+    { code: 'CAM', name: 'Cajidiocan-Magdiwang', url: 'https://script.google.com/macros/s/AKfycbxaGG7wbLGY1T3xXRr_VByBjH540zPgm7jegCaUxa5snMg4U04H9E5KJeUzWwcOfkDzuA/exec' },
+    { code: 'CON', name: 'Concepcion', url: 'https://script.google.com/macros/s/AKfycbzddSqJTCP9c2RW7_a_3ghHKuKWYi-xRQV-7e4nRg9MEi0z78hwOqv3RzVavI_tcZ0WJQ/exec' },
+    { code: 'COR', name: 'Corcuera', url: 'https://script.google.com/macros/s/AKfycbywBvLyXo5lWLk3aZyWkmbecE9ewT5UF5uX-AfGDT1oabS3hfJygXcV7A4DiMflw6zZKw/exec' },
+    { code: 'LOO', name: 'Looc', url: 'https://script.google.com/macros/s/AKfycbzZiN3TEWvY88dmHxVuoydj5Aii7KbCrA69d4qTxFcbngv5WdBW0ZVbw_YdtS9FiPZW/exec' },
+    { code: 'ODN', name: 'Odiongan North', url: 'https://script.google.com/macros/s/AKfycbxjUbOMrTxY4cYha1hvyG_q-SVbLlutimy9N-qpDmrCYqUcexMHEBGnKvniiWk_qQDVMg/exec' },
+    { code: 'ODS', name: 'Odiongan South', url: 'https://script.google.com/macros/s/AKfycbz1r3r7BHqwZK6futSL8pMuVo-97yElBUZYMn_Iu9D7IfY-aNzxiTEebJ-LwGH2wFE9/exec' },
+    { code: 'ROM', name: 'Romblon', url: 'https://script.google.com/macros/s/AKfycbxNIU_-UUvQ2IxFwkqNOWtKP4b4qn5ELzj57_5EwhYT_1WFykbNPORMZ1KpHSTPB0u1zQ/exec' },
+    { code: 'SSC', name: 'San Agustin-Santa Maria-Calatrava', url: 'https://script.google.com/macros/s/AKfycbzBtg6jSq8liSFTisvBIeB9D3KYjFdaLK7eTuEuSltXe1AnuOvgo13EZfxlHE1tz-B1Pg/exec' },
+    { code: 'SAN', name: 'San Andres', url: 'https://script.google.com/macros/s/AKfycbwVK0OpW119Yeea8y2X3JI-lLFGFIj_V6ahZ73UL7EZaTFUS7MOhmM8LyIRE3dTGX753g/exec' },
+    { code: 'SFD', name: 'San Fernando', url: 'https://script.google.com/macros/s/AKfycbyvTEowCIaIadFN1GP6vPdQtsfmSUCEpfrI3SUJbwvXOqWcowB_0yLlis_phGKPk4SQ/exec' },
+    { code: 'SJF', name: 'San Jose-Santa Fe', url: 'https://script.google.com/macros/s/AKfycbwyQOt661M5GidmECS_xpJ3XYHGUOfb7enyUJ5Y12NnovViKzn3vH9E1EP0fJ1RtGSo/exec' },
     { code: 'DEMO', name: 'Practice mode (works without internet)', url: '' }
   ],
   POST_FROM: '2026-12-01' // on or after this date the app opens on Posttest by default
@@ -553,6 +553,11 @@ const pad3 = n => String(n).padStart(3, '0');
 function todayISO() { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
 const autoPhase = () => (todayISO() >= CONFIG.POST_FROM ? 'post' : 'pre');
 const distByCode = c => CONFIG.DISTRICTS.find(d => d.code === c);
+function errText(res, noSignal) {
+  if (res.error === 'offline') return navigator.onLine === false ? noSignal : 'Could not reach the district sheet, although your phone seems online. (' + (res.detail || 'no detail') + ') Please tell the Division office.';
+  if (res.error === 'badresponse') return 'The district sheet did not answer with data. Its web app must be set to “Anyone”. Please tell the Division office. (' + (res.detail || '') + ')';
+  return res.error;
+}
 const phaseLabel = p => (p === 'pre' ? 'Pretest' : 'Posttest');
 const domLabel = d => (d === 'numeracy' ? 'Numeracy' : d === 'reading_en' ? 'Reading (English)' : d === 'reading_fil' ? 'Reading (Filipino)' : d);
 const initials = n => n.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
@@ -596,8 +601,9 @@ async function api(action, payload) {
   const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 30000);
   try {
     const res = await fetch(dist.url, { method: 'POST', body: JSON.stringify(Object.assign({ action }, payload)), signal: ctl.signal });
-    return await res.json();
-  } catch (e) { return { ok: false, error: 'offline' }; } finally { clearTimeout(to); }
+    const text = await res.text();
+    try { return JSON.parse(text); } catch (e) { return { ok: false, error: 'badresponse', detail: text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140) }; }
+  } catch (e) { return { ok: false, error: 'offline', detail: (e && e.name === 'AbortError') ? 'It took too long to answer.' : String((e && e.message) || e) }; } finally { clearTimeout(to); }
 }
 let syncing = false;
 async function sync(manual) {
@@ -751,7 +757,7 @@ async function doLogin(v, msg, btn) {
   const res = await api('login', { district: v.district, tutor_id: v.code, pin: v.pin });
   btn.disabled = false; btn.textContent = label;
   P.last = Object.assign(P.last || {}, { district: v.district, tutor_id: v.code });
-  if (!res.ok) { msg.textContent = res.error === 'offline' ? 'No signal. Connect to the internet to sign in the first time.' : res.error; return; }
+  if (!res.ok) { msg.textContent = errText(res, 'No signal. Connect to the internet to sign in the first time.'); return; }
   if (res.status === 'need_pin') { createPinScreen(v.district, v.code, v.remember, res.name, null); return; }
   await finishLogin(v.district, v.code, v.remember, res);
 }
@@ -768,7 +774,7 @@ function createPinScreen(district, code, remember, name, resetToken) {
   const btn = h('button', { class: 'btn primary wide', id: 'btnSavePin', onclick: async () => {
     msg.textContent = ''; if (!pf.check(msg)) return;
     btn.disabled = true; const res = await api('setpin', { district, tutor_id: code, pin: pf.a.value, reset_token: resetToken || '' }); btn.disabled = false;
-    if (!res.ok) { msg.textContent = res.error === 'offline' ? 'No signal. Try again when connected.' : res.error; return; }
+    if (!res.ok) { msg.textContent = errText(res, 'No signal. Try again when connected.'); return; }
     await finishLogin(district, code, remember, res);
   } }, 'Save PIN and sign in');
   app.append(h('div', { class: 'login' }, h('div', { class: 'brand' }, h('span', { html: MARKS }), h('h1', {}, 'Create your PIN'), h('p', {}, (name || code) + ' · code ' + code)), pf.els, msg, btn, h('button', { class: 'btn ghost wide', onclick: render }, 'Back')));
@@ -786,7 +792,7 @@ function registerScreen(district, remember) {
     btn.disabled = true; const res = await api('register', { district: d, name: nin.value.trim(), school: sb.value(), key: key.value.trim(), pin: pf.a.value }); btn.disabled = false;
     if (!res.ok) {
       if (res.error === 'key_required') { keyWrap.hidden = false; msg.textContent = 'This district asks for a registration key. Type it in the new box (ask your coordinator).'; key.focus(); return; }
-      msg.textContent = res.error === 'offline' ? 'No signal. Connect to the internet to register.' : res.error; return;
+      msg.textContent = errText(res, 'No signal. Connect to the internet to register.'); return;
     }
     P.last = Object.assign(P.last || {}, { district: d, tutor_id: res.tutor_id });
     codeScreen(d, res, remember !== false);
@@ -811,7 +817,7 @@ function recoverScreen(district, remember) {
     msg.textContent = ''; const d = dsel.value;
     if (!d || !nin.value.trim() || !sb.value()) { msg.textContent = 'Choose your district and type your full name and school.'; return; }
     btn.disabled = true; const res = await api('recover', { district: d, tutor_id: cin.value.trim().toUpperCase(), name: nin.value.trim(), school: sb.value() }); btn.disabled = false;
-    if (!res.ok) { msg.textContent = res.error === 'offline' ? 'No signal. Try again when connected.' : res.error; return; }
+    if (!res.ok) { msg.textContent = errText(res, 'No signal. Try again when connected.'); return; }
     P.last = Object.assign(P.last || {}, { district: d, tutor_id: res.tutor_id });
     createPinScreen(d, res.tutor_id, remember !== false, nin.value.trim(), res.reset_token);
   } }, 'Check and continue');
