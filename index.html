@@ -745,7 +745,7 @@ async function doLogin(v, msg, btn) {
   msg.textContent = '';
   if (!v.district) { msg.textContent = 'Choose your district.'; return; }
   if (!v.code) { msg.textContent = 'Enter your tutor code. New tutor? Tap “New tutor? Register here”.'; return; }
-  if (v.district !== 'DEMO' && !v.code.startsWith(v.district + '-')) { msg.textContent = 'This code does not belong to ' + distByCode(v.district).name + '. Check your district and code.'; return; }
+  if (v.district !== 'DEMO' && !v.code.startsWith(v.district + '-')) { msg.textContent = /^[A-Z]{3}-\d{3}$/.test(v.code) ? 'This code does not belong to ' + distByCode(v.district).name + '. Check your district.' : 'A tutor code looks like ' + v.district + '-001: three letters, a dash and numbers. The PIN goes in the PIN box. No code yet? Tap “New tutor? Register here”.'; return; }
   if (!v.pin) { msg.textContent = 'Enter your PIN. Forgot it? Tap “Forgot my code or PIN”.'; return; }
   const label = btn.textContent; btn.disabled = true; btn.textContent = 'Checking…';
   const res = await api('login', { district: v.district, tutor_id: v.code, pin: v.pin });
