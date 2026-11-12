@@ -708,7 +708,7 @@ const PRACTICE = {"Basic": {"W1S1": {"name": "Magsanay Tayo", "lang": "Filipino"
 
 /* ================= CONFIG ================= */
 const CONFIG = {
-  VERSION: '1.1',
+  VERSION: '1.3',
   // Paste each district's Apps Script web app URL (ends with /exec) in "url".
   DISTRICTS: [
     { code: 'ALC', name: 'Alcantara', url: 'https://script.google.com/macros/s/AKfycbzzJn38tC46ftiXdXrjgndOM7s7CfcAhcEUpKdnW1SyhlOW3GBUXtBG9D9QllZTOUHN8g/exec' },
@@ -1091,11 +1091,12 @@ function sheetEdit(id) {
 function sheetNumLaunch(id) {
   const l = learnerById(id); const phase = S.phase; const form = phase === 'pre' ? 'A' : 'B';
   const preN = phase === 'post' ? D().results[rkey(id, 'numeracy', 'pre')] : null; const preLv = preN && Number(preN.test_level) ? Number(preN.test_level) : 0;
-  const lv = h('select', { id: 'numLevel', disabled: !!preLv }, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => h('option', { value: g, selected: g === (preLv || Number(l.grade)) }, 'Level ' + g + ' · ' + LEVEL_NOTE[g])));
+  const gradeLevel = Math.min(Math.max(Number(l.grade) || 1, 1), 10); /* the test level is always the learner's grade level */
+  const lv = h('select', { id: 'numLevel', disabled: true, 'aria-label': 'Test level (set by the learner\u2019s grade)' }, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(g => h('option', { value: g, selected: g === (preLv || gradeLevel) }, 'Level ' + g + ' · ' + LEVEL_NOTE[g])));
   let mode = 'device'; const mb = h('div', { class: 'seg' }, [['device', 'Learner answers on this phone'], ['paper', 'Enter answers from paper']].map(([k, t]) => h('button', { class: k === mode ? 'on' : '', onclick: e => { mode = k; [...mb.children].forEach(c => c.classList.remove('on')); e.currentTarget.classList.add('on'); } }, t)));
   const have = D().results[rkey(id, 'numeracy', phase)];
   openSheet(h('div', { class: 'stack' }, h('h2', {}, 'Numeracy ' + phaseLabel(phase).toLowerCase()), h('p', { class: 'sub' }, l.name + ' · Grade ' + l.grade + ' · Form ' + form), have ? h('p', { class: 'warn' }, 'This learner already has a ' + phaseLabel(phase).toLowerCase() + ' score (' + resLine(have) + '). Starting again replaces it.') : null, phase === 'post' && !preN ? h('p', { class: 'warn' }, 'No pretest is on file for this learner, so this posttest will not count toward the gain. You can still save it.') : null,
-    h('label', { class: 'fld' }, h('span', {}, 'Test level (choose a lower level for a learner who is behind)'), lv), preLv ? h('p', { class: 'hint' }, 'The pretest used Level ' + preLv + ', so the posttest uses the same level. That keeps the two scores comparable.') : null, mb,
+    h('label', { class: 'fld' }, h('span', {}, 'Test level (the learner\u2019s grade level; it cannot be changed)'), lv), preLv ? h('p', { class: 'hint' }, 'The pretest used Level ' + preLv + ', so the posttest uses the same level. That keeps the two scores comparable.') : h('p', { class: 'hint' }, 'The test is set to the learner\u2019s grade level, so every learner is measured the same way and the scores can be compared.'), mb,
     h('div', { class: 'two' }, h('button', { class: 'btn', onclick: () => printNum(l, phase, Number(lv.value)) }, 'Print the test'), h('button', { class: 'btn primary', onclick: () => { closeSheet(); runNumeracy(l, phase, Number(lv.value), mode); } }, 'Start'))));
 }
 function qEl(it) { return h('div', { class: 'q' }, it.big ? h('div', { class: 'bigemo', 'aria-label': 'Picture to count' }, it.big) : null, h('div', { class: 'qt' }, richText(it.q))); }
@@ -1178,17 +1179,17 @@ function sheetReadLaunch(id) {
   const forced = () => { if (phase !== 'post') return null; const pre = D().results[rkey(id, 'reading_' + lang, 'pre')]; return pre ? (pre.mode === 'passage' ? 'passage' : 'checkin') : null; };
   const upd = () => {
     const f = forced(); if (f) tool = f;
-    [...tb.children].forEach(c => { const k = c.id.replace('tool_', ''); c.classList.toggle('on', k === tool); c.disabled = !!f && k !== f; });
+    [...tb.children].forEach(c => { const k = c.id.replace('tool_', ''); c.classList.toggle('on', k === tool); c.disabled = true; /* the tool is set by the grade level (or by the pretest) and cannot be changed */ });
     paraRow.hidden = tool !== 'checkin';
     note.textContent = f ? 'The pretest used this tool, so the posttest must use it too. That keeps the two scores comparable.' : (tool === 'checkin'
-      ? 'For beginning readers, like the ARAL-Reading check-in: the learner reads aloud one task at a time (letters, syllables, words, phrases, sentences, then two questions). Tap each item read correctly and it turns green. A timer runs from Start. Finish all tasks even if there are mistakes.'
-      : 'For learners who already read sentences: the learner reads a short passage aloud (you count the mistakes and the time), then you ask four questions' + (Number(l.grade) >= 7 ? ' (junior high passage: word meaning, conclusion, author’s purpose, fact or opinion)' : ' (detail, word meaning, cause and effect, conclusion)') + '. Choose the tool at the pretest and use it again at the posttest.');
+      ? 'Grades 1 to 3 do the check-in, like the ARAL-Reading check-in: the learner reads aloud one task at a time (letters, syllables, words, phrases, sentences, then two questions). Tap each item read correctly and it turns green. A timer runs from Start. Finish all tasks even if there are mistakes. The tool is set by the learner\u2019s grade level and cannot be changed.'
+      : 'Grades 4 to 10 read a passage: the learner reads a short passage aloud (you count the mistakes and the time), then you ask four questions' + (Number(l.grade) >= 7 ? ' (junior high passage: word meaning, conclusion, author’s purpose, fact or opinion)' : ' (detail, word meaning, cause and effect, conclusion)') + '. The tool is set by the learner\u2019s grade level and cannot be changed. The posttest uses the same tool.');
     warn.innerHTML = ''; const have = D().results[rkey(id, 'reading_' + lang, phase)]; if (have) warn.append(h('p', { class: 'warn' }, 'Already has a ' + phaseLabel(phase).toLowerCase() + ' reading result (' + resLine(have) + '). Starting again replaces it.'));
     const took = ['en', 'fil'].filter(k => D().results[rkey(id, 'reading_' + k, phase)]).map(k => (k === 'en' ? 'English' : 'Filipino')); if (took.length && !have) warn.append(h('p', { class: 'hint' }, 'Already taken in ' + took.join(' and ') + '. You can also take it in ' + (lang === 'en' ? 'English' : 'Filipino') + '.'));
     if (phase === 'post' && !D().results[rkey(id, 'reading_' + lang, 'pre')]) warn.append(h('p', { class: 'warn' }, 'No ' + (lang === 'en' ? 'English' : 'Filipino') + ' pretest is on file for this learner, so this posttest will not count toward the gain.'));
   }; upd();
   openSheet(h('div', { class: 'stack' }, h('h2', {}, 'Reading ' + phaseLabel(phase).toLowerCase()), h('p', { class: 'sub' }, l.name + ' · Grade ' + l.grade + ' · Form ' + (phase === 'pre' ? 'A' : 'B')),
-    h('label', { class: 'fld' }, h('span', {}, 'Language'), lb), h('label', { class: 'fld' }, h('span', {}, 'Reading tool'), tb), note, paraRow, warn,
+    h('label', { class: 'fld' }, h('span', {}, 'Language'), lb), h('label', { class: 'fld' }, h('span', {}, 'Reading tool (set by the learner\u2019s grade level)'), tb), note, paraRow, warn,
     h('button', { class: 'btn primary wide', id: 'btnReadStart', onclick: () => { closeSheet(); if (tool === 'passage') { const pre = phase === 'post' ? D().results[rkey(id, 'reading_' + lang, 'pre')] : null; runPassage(l, phase, lang, pre && pre.mode === 'passage' && Number(pre.test_level) ? Number(pre.test_level) : (Number(l.grade) >= 7 ? 3 : 2)); } else runReading(l, phase, lang, para.checked); } }, 'Start')));
 }
 function runReading(l, phase, lang, withPara) {
@@ -1333,9 +1334,14 @@ function posFromSeq(track, n) { if (track === 'KS1') return { wk: 1, ss: 1, num:
 function nextRead(le, ks, track, lang) { const same = le && trackOf(le) === track && (ksNote(le) || (track === 'KS1' ? 1 : ks)) === ks && (track !== 'KS1' || (langNote(le) || 'fil') === (lang || 'fil')); return same ? posFromSeq(track, Number(le.worksheet) + 1) : posFromSeq(track, 1); }
 /* The key stage and program the learner is in: the last entry, otherwise the grade; from Key Stage 2 the pretest tool gives the first guess for Basic or Plus */
 function ksFor(l) { const last = lastEntry(l.id, 'reading'); return (last && ksNote(last)) || (last && trackOf(last) === 'KS1' ? 1 : null) || ksOf(l.grade); }
+/* Plus if the learner read the passage well, otherwise Basic: the same rule as the suggestion on the result screen */
+function passageTrack(res) {
+  const m = /PR:m(\d+)/.exec(res.answers || ''); const lang = String(res.domain || '').replace('reading_', ''); const bank = (Number(res.test_level) === 3 ? PLUS3 : PLUS)[lang]; const ps = bank && bank[res.form];
+  if (!m || !ps) return null; const words = wordCount(ps.text); return (words - Number(m[1])) / words * 100 >= 90 && Number(res.raw) >= 2 ? 'Plus' : 'Basic';
+}
 function trackFor(l, ks) {
   ks = ks || ksFor(l); if (ks === 1) return 'KS1'; const last = lastEntry(l.id, 'reading'); const tr = last && trackOf(last); if (tr === 'Basic' || tr === 'Plus') return tr;
-  const R = resultsFor(l.id); const pre = (R.reading_en && R.reading_en.pre) || (R.reading_fil && R.reading_fil.pre); return pre && pre.mode === 'passage' ? 'Plus' : 'Basic';
+  const R = resultsFor(l.id); const pre = (R.reading_en && R.reading_en.pre) || (R.reading_fil && R.reading_fil.pre); return pre && pre.mode === 'passage' ? (passageTrack(pre) || 'Plus') : 'Basic';
 }
 function readStripEl(lid) {
   const e = D().tracker.filter(t => t.learner_id === lid && t.domain === 'reading' && !Number(t.absent)).sort((a, b) => (a.date + a.created_at < b.date + b.created_at ? -1 : 1)).slice(-12); if (!e.length) return null;
@@ -1545,7 +1551,7 @@ function sheetGroupLogReading(date) {
 
 /* ================= DIVISION MONITOR (PIN) ================= */
 /* Shows the Tutor_Monitor tab of the Summary sheet. The PIN is checked by the Summary script, not by this page, so the numbers never travel without it. */
-const MON = { pin: '', data: null, loading: false, err: '', district: '', status: '', q: '', sort: 'attention', keep: false };
+const MON = { pin: '', data: null, loading: false, err: '', district: '', status: '', q: '', sort: 'attention', keep: false, below: false };
 const monUrl = () => { let u = ''; try { u = localStorage.getItem('aral-monitor-url') || ''; } catch (e) { u = ''; } return CONFIG.MONITOR_URL || u; };
 function openMonitor() {
   S.monitor = true;
@@ -1589,24 +1595,26 @@ function monitorScreen() {
     return wrap;
   }
   const d0 = MON.data; const ix = {}; d0.headers.forEach((c, i) => { ix[c] = i; });
-  const rows = d0.rows.map(r => ({ district: r[ix.district], id: r[ix.tutor_id], name: r[ix.tutor_name], school: r[ix.school], learners: r[ix.learners], npre: r[ix.num_pre_pct], rpre: r[ix.read_pre_pct], l7: r[ix.last_7_days], last: r[ix.last_activity], since: r[ix.days_since], status: r[ix.status] }));
+  const rows = d0.rows.map(r => ({ district: r[ix.district], id: r[ix.tutor_id], name: r[ix.tutor_name], school: r[ix.school], learners: r[ix.learners], npre: r[ix.num_pre_pct], rpre: r[ix.read_pre_pct], l7: r[ix.last_7_days], last: r[ix.last_activity], since: r[ix.days_since], below: ix.below_grade === undefined ? null : (Number(r[ix.below_grade]) || 0), status: r[ix.status] }));
   const districts = [...new Set(rows.map(r => r.district))]; const counts = {}; rows.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+  const hasBelow = rows.some(r => r.below != null); const belowLearners = rows.reduce((a, r) => a + (r.below || 0), 0); const belowTutors = rows.filter(r => r.below > 0).length;
   const listBox = h('div', {}); const chipBox = h('div', { class: 'mchips' });
   const drawList = () => {
     const q = MON.q.toLowerCase();
-    const list = rows.filter(r => (!MON.district || r.district === MON.district) && (!MON.status || r.status === MON.status) && (!q || (r.id + ' ' + r.school + ' ' + (r.name || '')).toLowerCase().indexOf(q) >= 0));
+    const list = rows.filter(r => (!MON.district || r.district === MON.district) && (!MON.status || r.status === MON.status) && (!MON.below || r.below > 0) && (!q || (r.id + ' ' + r.school + ' ' + (r.name || '')).toLowerCase().indexOf(q) >= 0));
     list.sort(MON.sort === 'attention' ? (a, b) => (MON_ORDER[a.status] - MON_ORDER[b.status]) || String(a.id).localeCompare(String(b.id)) : (a, b) => String(a.id).localeCompare(String(b.id)));
     const pc = v => (v === '' || v == null ? '\u2014' : v + '%');
     listBox.innerHTML = ''; listBox.append(h('p', { class: 'hint', id: 'monCount' }, 'Showing ' + list.length + ' of ' + rows.length + ' tutors'),
-      h('div', { class: 'scrollx' }, h('table', { class: 'rep monTable' }, h('thead', {}, h('tr', {}, ['Tutor', 'School', 'Learners', 'Numeracy pretest', 'Reading pretest', 'Last 7 days', 'Last activity', 'Status'].map(t => h('th', {}, t)))),
-        h('tbody', {}, list.map(r => h('tr', {}, h('th', {}, r.id + (r.name ? ' ' + r.name : '') + ' \u00B7 ' + r.district), h('td', {}, r.school), h('td', {}, r.learners), h('td', {}, pc(r.npre)), h('td', {}, pc(r.rpre)), h('td', {}, r.l7), h('td', {}, r.last ? r.last + (r.since !== '' ? ' (' + r.since + ' d)' : '') : '\u2014'), h('td', {}, h('span', { class: 'mst ' + monCls(r.status) }, r.status))))))));
+      h('div', { class: 'scrollx' }, h('table', { class: 'rep monTable' }, h('thead', {}, h('tr', {}, ['Tutor', 'School', 'Learners', 'Numeracy pretest', 'Reading pretest', 'Below grade', 'Last 7 days', 'Last activity', 'Status'].map(t => h('th', {}, t)))),
+        h('tbody', {}, list.map(r => h('tr', {}, h('th', {}, r.id + (r.name ? ' ' + r.name : '') + ' \u00B7 ' + r.district), h('td', {}, r.school), h('td', {}, r.learners), h('td', {}, pc(r.npre)), h('td', {}, pc(r.rpre)), h('td', {}, r.below == null ? '\u2014' : r.below > 0 ? h('span', { class: 'mst quiet' }, r.below) : 0), h('td', {}, r.l7), h('td', {}, r.last ? r.last + (r.since !== '' ? ' (' + r.since + ' d)' : '') : '\u2014'), h('td', {}, h('span', { class: 'mst ' + monCls(r.status) }, r.status))))))));
   };
-  const drawChips = () => { chipBox.innerHTML = ''; [['', 'All ' + rows.length]].concat(['Active', 'Quiet', 'Not started', 'No learners yet'].map(s => [s, s + ' ' + (counts[s] || 0)])).forEach(([k, t]) => chipBox.append(h('button', { class: 'mchip' + (MON.status === k ? ' on' : ''), 'data-st': k, onclick: () => { MON.status = k; drawChips(); drawList(); } }, t))); };
+  const drawChips = () => { chipBox.innerHTML = ''; [['', 'All ' + rows.length]].concat(['Active', 'Quiet', 'Not started', 'No learners yet'].map(s => [s, s + ' ' + (counts[s] || 0)])).forEach(([k, t]) => chipBox.append(h('button', { class: 'mchip' + (MON.status === k ? ' on' : ''), 'data-st': k, onclick: () => { MON.status = k; drawChips(); drawList(); } }, t)));
+    if (hasBelow) chipBox.append(h('button', { class: 'mchip' + (MON.below ? ' on' : ''), 'data-st': '__below', onclick: () => { MON.below = !MON.below; drawChips(); drawList(); } }, 'Below grade ' + belowTutors)); };
   const dsel = h('select', { id: 'monDist', 'aria-label': 'District', onchange: e => { MON.district = e.target.value; drawList(); } }, h('option', { value: '' }, 'All districts'), districts.map(x => h('option', { value: x, selected: MON.district === x }, x)));
   const search = h('input', { id: 'monQ', type: 'search', placeholder: 'Search tutor code or school', value: MON.q, oninput: e => { MON.q = e.target.value; drawList(); } });
   const ssel = h('select', { id: 'monSort', 'aria-label': 'Sort', onchange: e => { MON.sort = e.target.value; drawList(); } }, h('option', { value: 'attention', selected: MON.sort === 'attention' }, 'Needs attention first'), h('option', { value: 'code', selected: MON.sort === 'code' }, 'Tutor code'));
   drawChips(); drawList();
-  wrap.append(h('p', { class: 'sub', id: 'monUpdated' }, d0.updated || ''), chipBox, h('div', { class: 'monfilters' }, dsel, search, ssel), listBox,
+  wrap.append(h('p', { class: 'sub', id: 'monUpdated' }, d0.updated || ''), chipBox, hasBelow ? h('p', { class: 'hint', id: 'monBelow' }, 'Tested below their grade level: ' + belowLearners + ' learner' + (belowLearners === 1 ? '' : 's') + (belowTutors ? ' (' + belowTutors + ' tutor' + (belowTutors === 1 ? '' : 's') + ')' : '') + '. The test level is meant to be the learner\u2019s grade, so anything above zero is worth checking.') : null, h('div', { class: 'monfilters' }, dsel, search, ssel), listBox,
     h('p', { class: 'hint' }, 'Quiet can also mean the tutor had no signal: phones send their work when there is signal. The list refreshes every hour.'),
     h('div', { class: 'two' }, h('button', { class: 'btn', id: 'monReload', onclick: () => loadMonitor('monitor') }, 'Reload the list'), h('button', { class: 'btn', id: 'monUpdate', onclick: () => { if (confirm('This asks the Summary sheet to read all the districts again. It takes a minute or two. Continue?')) loadMonitor('monitor_refresh'); } }, 'Update now')),
     h('button', { class: 'btn danger wide', id: 'monLock', onclick: lockMonitor }, 'Lock and forget the PIN'));
@@ -1704,8 +1712,8 @@ function sheetHelp(open) {
       h('ol', {}, h('li', {}, 'Open Today and pick the date and subject.'), h('li', {}, 'For Reading: tap a learner, choose Basic or Plus (Grade 4 and up), then the week and session you taught. The marks are optional: if you type the score of the LAS the learner did in Let\u2019s Check (items in the LAS and items correct), the app sets the mark for you and keeps the learner\u2019s LAS average. In Key Stage 2 the app shows the practice activity of the session (for example Magsanay Tayo, with its workbook page) and asks for a score only when the activity has written items. In Key Stage 1, choose Progress Check-in on the day you give it and enter the totals from the scoring sheet.'), h('li', {}, 'Tap a learner. Set the worksheet number (it starts at the next one).'), h('li', {}, 'Set △ and ○ from your checking. Tap Save worksheet, or Absent.'))),
     sec('tests', 'Pretest and posttest',
       h('p', {}, 'Do the Pretest at the start and the Posttest at the end of the program. The app opens on Posttest from December 1. You can switch at the top of Learners.'),
-      h('p', {}, h('strong', {}, 'Numeracy: '), 'Tap a learner, then Numeracy. Choose a lower level for a learner who is behind. The learner answers on the phone, or you type answers from paper. A ○ in the result means review that item. Correct answers are not shown so the posttest stays fair.'),
-      h('p', {}, h('strong', {}, 'Reading: '), 'Like the ARAL-Reading check-in, the learner reads aloud one task at a time: letters, syllables, words, phrases, sentences, then two questions. Tap each item the learner reads correctly and it turns green. The timer runs from Start. Do all six tasks even if there are mistakes. The microphone button is optional and only a suggestion; your taps count. For learners who already read sentences, choose Passage and questions: they read a short passage aloud, you count the mistakes and the time, then ask four questions. Use the same tool at the posttest.')),
+      h('p', {}, h('strong', {}, 'Numeracy: '), 'Tap a learner, then Numeracy. The test is set to the learner\u2019s grade level and cannot be changed. The learner answers on the phone, or you type answers from paper. A ○ in the result means review that item. Correct answers are not shown so the posttest stays fair.'),
+      h('p', {}, h('strong', {}, 'Reading: '), 'Like the ARAL-Reading check-in, the learner reads aloud one task at a time: letters, syllables, words, phrases, sentences, then two questions. Tap each item the learner reads correctly and it turns green. The timer runs from Start. Do all six tasks even if there are mistakes. The microphone button is optional and only a suggestion; your taps count. The reading test is set by the grade level and cannot be changed: Grades 1 to 3 do this check-in; Grades 4 to 10 read a short passage aloud (you count the mistakes and the time), then you ask four questions. The posttest uses the same tool.')),
     sec('dtr', 'DTR and accomplishment',
       h('p', {}, 'Your DTR and accomplishment report are in the ARAL Tutor Engagement app. Open it from Account, then Open DTR and Accomplishment. It has its own sign-in (reference number and PIN).')),
     sec('offline', 'No signal?',
