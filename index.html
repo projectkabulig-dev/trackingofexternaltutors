@@ -149,6 +149,7 @@ table.mini{width:100%;border-collapse:collapse;font-size:14px}.mini th,.mini td{
 .glist{display:flex;flex-direction:column;gap:8px;max-height:46vh;overflow:auto}.grow{display:grid;grid-template-columns:1fr minmax(150px,200px);gap:6px 10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fff}.grow.perfect{border-color:var(--sun);background:var(--sun-l)}.grow.redo{border-color:var(--coral);background:var(--coral-l)}.grow.absent{background:#EEF1F6}.gnums{grid-column:1/-1;display:flex;gap:10px}.gnum{display:flex;align-items:center;gap:6px;font-weight:700}.gnum input{width:72px;min-height:40px}
 .startbox{border-left:4px solid var(--sea);background:var(--sea-l);border-radius:10px;padding:10px 14px;margin:8px 0}.startbox ol{margin:6px 0 0 18px;padding:0}.startbox li{margin:3px 0}
 .tries{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 14px;font-size:14px;color:var(--ink2)}.tries ul{margin:6px 0 0 18px;padding:0}.tries strong{color:var(--ink)}
+.entry{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 12px;border:1px solid var(--line,#d9e2ec);border-radius:12px}.entry .who{display:flex;flex-direction:column;gap:2px;min-width:0}.entry .who b{font-size:15px}.entry .btn{width:auto;min-width:84px;padding:8px 12px;min-height:44px}
 .strip{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px;color:var(--ink2)}.sym{font-weight:700;font-size:18px;line-height:1}.sym.star{color:var(--sun)}.sym.tri{color:var(--ink)}.sym.circ{color:var(--coral)}.sym.ci{font-size:12px;background:var(--sea-l);border-radius:8px;padding:3px 7px;color:var(--sea-d)}.grow.help{border-color:var(--ink)}.grow.notyet{border-color:var(--coral);background:var(--coral-l)}
 .lasbox{border:1px dashed var(--line);border-radius:12px;padding:10px 12px;background:#fff;display:flex;flex-direction:column;gap:6px}.row2{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.row2 input{min-height:44px;width:100%}.row3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.row3 input{min-height:44px;width:100%}
 .login.mon{max-width:1100px}.montop{display:flex;align-items:center;gap:10px}.montop h2{margin:0}.mchips{display:flex;flex-wrap:wrap;gap:8px}.mchip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:8px 14px;font-weight:700;cursor:pointer;color:var(--ink)}.mchip.on{border-color:var(--sea);background:var(--sea-l)}.monfilters{display:grid;grid-template-columns:1fr;gap:8px}.mst{padding:3px 10px;border-radius:999px;font-weight:700;font-size:13px}.mst.active{background:var(--leaf-l);color:var(--leaf)}.mst.quiet{background:var(--coral-l);color:var(--coral)}.mst.notstarted{background:var(--sun-l);color:#7a5200}.mst.nolearners{background:#EEF1F6;color:var(--ink2)}.monTable{min-width:760px}.monTable th:first-child,.monTable td:nth-child(2){text-align:left}
@@ -708,7 +709,7 @@ const PRACTICE = {"Basic": {"W1S1": {"name": "Magsanay Tayo", "lang": "Filipino"
 
 /* ================= CONFIG ================= */
 const CONFIG = {
-  VERSION: '1.4',
+  VERSION: '1.5',
   // Paste each district's Apps Script web app URL (ends with /exec) in "url".
   DISTRICTS: [
     { code: 'ALC', name: 'Alcantara', url: 'https://script.google.com/macros/s/AKfycbzzJn38tC46ftiXdXrjgndOM7s7CfcAhcEUpKdnW1SyhlOW3GBUXtBG9D9QllZTOUHN8g/exec' },
@@ -788,6 +789,7 @@ function applyOpLocal(op) {
   if (op.type === 'learner') { const i = d.learners.findIndex(l => l.id === x.id); if (i >= 0) Object.assign(d.learners[i], x); else d.learners.push(Object.assign({}, x)); }
   else if (op.type === 'result') { d.results[x.key] = x; }
   else if (op.type === 'tracker') { if (!d.tracker.some(t => t.entry_id === x.entry_id)) d.tracker.push(x); }
+  else if (op.type === 'tracker_delete') { d.tracker = d.tracker.filter(t => t.entry_id !== x.entry_id); }
 }
 function addOp(type, data) { const op = { id: uid(), type, data }; D().queue.push(op); applyOpLocal(op); save(); sync(); renderPill(); return op; }
 
@@ -807,15 +809,17 @@ let syncing = false;
 async function sync(manual) {
   if (syncing || !P.session) return false; const d = D();
   if (!d.queue.length && !manual) return true;
-  syncing = true; renderPill();
+  syncing = true; renderPill(); let delFail = 0;
   try {
     while (D().queue.length) {
       const batch = D().queue.slice(0, 40);
       const res = await api('sync', { tutor_id: P.session.tutor_id, token: P.session.token, ops: batch });
       if (!res.ok) { if (res.error === 'auth') { toast('Please sign in again.'); logout(true); return false; } throw new Error(res.error || 'failed'); }
       const gone = new Set([].concat(res.applied || [], res.rejected || []));
+      if (batch.some(o => o.type === 'tracker_delete' && (res.rejected || []).indexOf(o.id) >= 0)) delFail = res.ver >= 2 ? 1 : 2; /* the server said no to a delete */
       D().queue = D().queue.filter(o => !gone.has(o.id)); save();
     }
+    if (delFail) { await pull(); render(); toast(delFail === 2 ? 'Your district system has not been updated yet, so the entry could not be deleted. Please tell the Division office.' : 'That entry could not be deleted. It stays in your list.', 7000); }
     if (manual) await pull();
     return true;
   } catch (e) { return false; } finally { syncing = false; renderPill(); }
@@ -1051,6 +1055,7 @@ function sheetLearner(id) {
     h('h2', {}, l.name), h('p', { class: 'sub' }, 'Grade ' + l.grade + ' · ' + (l.school || 'No school') + ' · ' + (l.group === 'pullout' ? 'Pull-out group' : 'Regular group') + ' · Code ' + l.id),
     h('div', { class: 'two' }, h('button', { class: 'btn primary', onclick: () => { closeSheet(); sheetNumLaunch(id); } }, 'Numeracy ' + (S.phase === 'pre' ? 'pretest' : 'posttest')), h('button', { class: 'btn primary', onclick: () => { closeSheet(); sheetReadLaunch(id); } }, 'Reading ' + (S.phase === 'pre' ? 'pretest' : 'posttest'))),
     h('div', { class: 'two' }, h('button', { class: 'btn', onclick: () => { closeSheet(); S.tab = 'session'; S.openRow = id; render(); } }, 'Log a session'), h('button', { class: 'btn', onclick: () => { closeSheet(); sheetEdit(id); } }, 'Edit learner')),
+    h('button', { class: 'btn wide', onclick: () => { closeSheet(); sheetEntries(id); } }, 'Saved sessions (' + D().tracker.filter(t => t.learner_id === id).length + ')'),
     readStripEl(l.id), learnerStart(l, R),
     doms.length ? h('table', { class: 'mini' }, h('thead', {}, h('tr', {}, h('th', {}, ''), h('th', {}, 'Pretest'), h('th', {}, 'Posttest'))), h('tbody', {}, doms.map(d => h('tr', {}, h('th', {}, domLabel(d)), h('td', {}, resLine(R[d].pre)), h('td', {}, resLine(R[d].post)))))) : h('p', { class: 'sub' }, 'No test results yet.')));
 }
@@ -1077,6 +1082,26 @@ function sheetBulk() {
         addOp('learner', { id: P.session.tutor_id + '-' + pad3(seq), name, school, grade, group: gp.value, status: 'active', school_new: schoolIsNew(school) ? 1 : 0, enrolled: todayISO() }); });
       P.last = Object.assign(P.last || {}, { school, grade: gr.value, group: gp.value }); save(); closeSheet(); render(); toast(n + ' learner' + (n === 1 ? '' : 's') + ' added');
     } }, 'Save learners')));
+}
+/* Saved sessions of one learner: the tutor can take out an entry that was saved by mistake. Only his own entries are here; the district sheet keeps a copy in the tab Tracker_removed. */
+function entryLabel(t) {
+  if (Number(t.absent)) return (t.domain === 'reading' ? 'Reading' : 'Math') + ' · Absent';
+  if (t.domain === 'reading' && ciOf(t)) return 'Reading · Check-in ' + ciOf(t); /* a check-in has no star or triangle */
+  if (t.domain === 'reading') return 'Reading · ' + readLabel(t) + ' · ' + (Number(t.circ) ? '\u25CB Not yet' : Number(t.tri) ? '\u25B3 Needed help' : '\u2605 Did well');
+  const st = entrySet(t); const tri = Number(t.tri) || 0, circ = Number(t.circ) || 0;
+  return 'Math · ' + (st ? setLabel(st) + ' ' : '') + 'WS ' + (t.worksheet || '-') + ' · ' + (tri || circ ? '\u25B3 ' + tri + '  \u25CB ' + circ : '\u2605 all correct');
+}
+function sheetEntries(id) {
+  const l = learnerById(id); if (!l) return;
+  const list = D().tracker.filter(t => t.learner_id === id).sort((a, b) => (a.date + a.created_at < b.date + b.created_at ? 1 : -1)).slice(0, 60);
+  openSheet(h('div', { class: 'stack' }, h('h2', {}, 'Saved sessions'), h('p', { class: 'sub' }, l.name + ' · Code ' + l.id),
+    h('p', { class: 'hint' }, 'Delete an entry only if it was saved by mistake or as a test. Test results are not affected. After deleting, log the session again if it really happened.'),
+    list.length ? list.map(t => h('div', { class: 'entry' }, h('div', { class: 'who' }, h('b', {}, entryLabel(t)), h('span', { class: 'hint' }, t.date)),
+      h('button', { class: 'btn danger', onclick: () => {
+        if (!confirm('Delete this entry for ' + l.name + '?\n\n' + entryLabel(t) + '\nDate: ' + t.date + '\n\nThis cannot be undone in the app.')) return;
+        addOp('tracker_delete', { entry_id: t.entry_id, learner_id: t.learner_id }); closeSheet(); render(); sheetEntries(id); toast('Entry deleted');
+      } }, 'Delete'))) : h('p', { class: 'sub' }, 'No saved sessions yet.'),
+    h('button', { class: 'btn wide', onclick: () => { closeSheet(); sheetLearner(id); } }, 'Back')));
 }
 function sheetEdit(id) {
   const l = learnerById(id); const name = h('input', { type: 'text', value: l.name }); const sc = schoolInput(l.school); const gr = gradeSelect(l.grade); const gp = groupSelect(l.group);
