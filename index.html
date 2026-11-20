@@ -86,6 +86,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--sea);outline:none;box
 .list{display:flex;flex-direction:column;gap:8px}
 .row{width:100%;text-align:left;display:flex;align-items:center;gap:12px;padding:12px;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--sea);border-radius:var(--r);cursor:pointer}
 .row.pull{border-left-color:var(--sun)}
+.ghead{margin:10px 0 0;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink2);grid-column:1/-1}.list>.ghead:first-child{margin-top:0}
 .av{flex:none;width:42px;height:42px;border-radius:50%;background:var(--sea-l);color:var(--sea-d);display:grid;place-items:center;font-weight:700;font-family:var(--disp)}
 .av.pull{background:var(--sun-l);color:#7A5600}
 .rn{flex:1;min-width:0;display:flex;flex-direction:column}.rn strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rn small{color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -709,7 +710,7 @@ const PRACTICE = {"Basic": {"W1S1": {"name": "Magsanay Tayo", "lang": "Filipino"
 
 /* ================= CONFIG ================= */
 const CONFIG = {
-  VERSION: '1.5',
+  VERSION: '1.6',
   // Paste each district's Apps Script web app URL (ends with /exec) in "url".
   DISTRICTS: [
     { code: 'ALC', name: 'Alcantara', url: 'https://script.google.com/macros/s/AKfycbzzJn38tC46ftiXdXrjgndOM7s7CfcAhcEUpKdnW1SyhlOW3GBUXtBG9D9QllZTOUHN8g/exec' },
@@ -1008,7 +1009,13 @@ function scrLearners() {
     const rows = all.filter(l => !q || l.name.toLowerCase().includes(q) || (l.school || '').toLowerCase().includes(q));
     if (!all.length) { list.append(h('div', { class: 'empty' }, h('p', {}, 'No learners yet.'), h('p', { class: 'sub' }, 'Add the learners you tutor. You can paste a whole list at once.'), h('button', { class: 'btn primary', onclick: () => sheetBulk() }, 'Add learners'))); return; }
     if (!rows.length) { list.append(h('p', { class: 'sub pad' }, 'No match for “' + S.q + '”.')); return; }
+    /* grouped by grade (lowest first); inside each grade, A to Z by the name as typed; no grade goes last */
+    const gnum = l => { const g = Number(l.grade); return g >= 1 ? g : 99; };
+    rows.sort((x, y) => gnum(x) - gnum(y) || String(x.name).trim().localeCompare(String(y.name).trim(), 'en', { sensitivity: 'base', numeric: true }) || String(x.id).localeCompare(String(y.id)));
+    const cnt = {}; rows.forEach(l => { cnt[gnum(l)] = (cnt[gnum(l)] || 0) + 1; });
+    let lastG = null;
     rows.forEach(l => { const s = statusOf(l.id, S.phase);
+      if (gnum(l) !== lastG) { lastG = gnum(l); list.append(h('h3', { class: 'ghead' }, (lastG === 99 ? 'No grade' : 'Grade ' + lastG) + ' (' + cnt[lastG] + ')')); }
       list.append(h('button', { class: 'row ' + (l.group === 'pullout' ? 'pull' : 'reg'), onclick: () => sheetLearner(l.id) },
         h('span', { class: 'av' }, initials(l.name)), h('span', { class: 'rn' }, h('strong', {}, l.name), h('small', {}, 'Grade ' + l.grade + ' · ' + (l.school || 'No school') + (l.group === 'pullout' ? ' · Pull-out' : ''))),
         h('span', { class: 'chips' }, h('i', { class: 'chip' + (s.num ? ' ok' : '') }, 'Num'), h('i', { class: 'chip' + (s.read ? ' ok' : '') }, 'Read')))); });
