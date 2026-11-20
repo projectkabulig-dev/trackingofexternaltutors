@@ -781,6 +781,11 @@ const S = { tab: 'learners', phase: autoPhase(), q: '', openRow: null, sdom: 'ma
 function save() { try { localStorage.setItem(LS, JSON.stringify(P)); } catch (e) { toast('Phone storage is full. Sync first, then free some space.'); } }
 function D() { const id = P.session.tutor_id; return P.data[id] || (P.data[id] = { learners: [], results: {}, tracker: [], queue: [], pulledAt: 0 }); }
 const activeLearners = () => D().learners.filter(l => l.status !== 'removed').sort((a, b) => a.name.localeCompare(b.name));
+/* Display order: grade 1 to 10, then no grade; A to Z by the name as typed inside each grade. Display only, it never changes what is saved. */
+const gnum = l => { const g = Number(l.grade); return g >= 1 ? g : 99; };
+const byGrade = arr => arr.slice().sort((x, y) => gnum(x) - gnum(y) || String(x.name).trim().localeCompare(String(y.name).trim(), 'en', { sensitivity: 'base', numeric: true }) || String(x.id).localeCompare(String(y.id)));
+const gradeCounts = arr => { const c = {}; arr.forEach(l => { c[gnum(l)] = (c[gnum(l)] || 0) + 1; }); return c; };
+const gradeHead = (g, n) => h('h3', { class: 'ghead' }, (g === 99 ? 'No grade' : 'Grade ' + g) + ' (' + n + ')');
 const learnerById = id => D().learners.find(l => l.id === id);
 const rkey = (lid, dom, ph) => lid + '|' + dom + '|' + ph;
 function schoolsOfDistrict() { const d = distByCode(P.session.district); return (d && SCHOOLS[d.name]) || []; }
@@ -1006,16 +1011,12 @@ function scrLearners() {
   const list = h('div', { class: 'list' });
   const fill = () => {
     list.innerHTML = ''; const q = S.q.trim().toLowerCase();
-    const rows = all.filter(l => !q || l.name.toLowerCase().includes(q) || (l.school || '').toLowerCase().includes(q));
+    let rows = all.filter(l => !q || l.name.toLowerCase().includes(q) || (l.school || '').toLowerCase().includes(q));
     if (!all.length) { list.append(h('div', { class: 'empty' }, h('p', {}, 'No learners yet.'), h('p', { class: 'sub' }, 'Add the learners you tutor. You can paste a whole list at once.'), h('button', { class: 'btn primary', onclick: () => sheetBulk() }, 'Add learners'))); return; }
     if (!rows.length) { list.append(h('p', { class: 'sub pad' }, 'No match for “' + S.q + '”.')); return; }
-    /* grouped by grade (lowest first); inside each grade, A to Z by the name as typed; no grade goes last */
-    const gnum = l => { const g = Number(l.grade); return g >= 1 ? g : 99; };
-    rows.sort((x, y) => gnum(x) - gnum(y) || String(x.name).trim().localeCompare(String(y.name).trim(), 'en', { sensitivity: 'base', numeric: true }) || String(x.id).localeCompare(String(y.id)));
-    const cnt = {}; rows.forEach(l => { cnt[gnum(l)] = (cnt[gnum(l)] || 0) + 1; });
-    let lastG = null;
+    rows = byGrade(rows); const cnt = gradeCounts(rows); let lastG = null;
     rows.forEach(l => { const s = statusOf(l.id, S.phase);
-      if (gnum(l) !== lastG) { lastG = gnum(l); list.append(h('h3', { class: 'ghead' }, (lastG === 99 ? 'No grade' : 'Grade ' + lastG) + ' (' + cnt[lastG] + ')')); }
+      if (gnum(l) !== lastG) { lastG = gnum(l); list.append(gradeHead(lastG, cnt[lastG])); }
       list.append(h('button', { class: 'row ' + (l.group === 'pullout' ? 'pull' : 'reg'), onclick: () => sheetLearner(l.id) },
         h('span', { class: 'av' }, initials(l.name)), h('span', { class: 'rn' }, h('strong', {}, l.name), h('small', {}, 'Grade ' + l.grade + ' · ' + (l.school || 'No school') + (l.group === 'pullout' ? ' · Pull-out' : ''))),
         h('span', { class: 'chips' }, h('i', { class: 'chip' + (s.num ? ' ok' : '') }, 'Num'), h('i', { class: 'chip' + (s.read ? ' ok' : '') }, 'Read')))); });
@@ -1392,7 +1393,9 @@ function scrSession() {
   const presentIds = new Set(todays.filter(t => !Number(t.absent)).map(t => t.learner_id));
   box.append(legend(), h('button', { class: 'btn primary wide', id: 'btnGroup', onclick: () => sheetGroupLog(date) }, 'Log the whole group at once'), h('div', { class: 'sumline' }, h('strong', {}, 'Session log'), h('span', {}, presentIds.size + ' present · ' + todays.filter(t => Number(t.absent)).length + ' absent')), h('div', { class: 'two' }, h('label', { class: 'fld' }, h('span', {}, 'Date'), dateIn), h('div', { class: 'fld' }, h('span', {}, 'Subject'), seg)));
   if (!L.length) { box.append(h('div', { class: 'empty' }, h('p', {}, 'Add learners first.'), h('button', { class: 'btn primary', onclick: () => { S.tab = 'learners'; render(); } }, 'Go to Learners'))); return box; }
-  L.forEach(l => {
+  const gSorted = byGrade(L); const gCnt = gradeCounts(L); let gLast = null;
+  gSorted.forEach(l => {
+    if (gnum(l) !== gLast) { gLast = gnum(l); box.append(gradeHead(gLast, gCnt[gLast])); }
     const mine = todays.filter(t => t.learner_id === l.id && t.domain === S.sdom); const absent = todays.some(t => t.learner_id === l.id && Number(t.absent));
     const stars = mine.filter(t => !Number(t.absent) && !Number(t.tri) && !Number(t.circ)).length; const le = lastEntry(l.id, S.sdom);
     const open = S.openRow === l.id;
@@ -1444,7 +1447,7 @@ function sheetGroupLog(date) {
   let setG = math ? Number(Object.keys(grades).sort((a, b) => grades[b] - grades[a])[0]) : 0;
   const maxWs = () => (math && WS_TITLES[setG] ? WS_TITLES[setG].length - 1 : 999);
   const guessWs = () => { const c = {}; L.forEach(l => { const le = lastEntry(l.id, dom, math ? setG : null); const n = le ? (Number(le.tri) || Number(le.circ) ? Number(le.worksheet) : Number(le.worksheet) + 1) : 1; c[n] = (c[n] || 0) + 1; }); return Math.min(Number(Object.keys(c).sort((a, b) => c[b] - c[a])[0]), maxWs()); };
-  let ws = guessWs(); const rows = L.map(l => ({ l, st: 'skip', tri: 0, circ: 0 }));
+  let ws = guessWs(); const rows = byGrade(L).map(l => ({ l, st: 'skip', tri: 0, circ: 0 })); const gCnt = gradeCounts(L);
   const wsNum = h('strong', {}, String(ws)); const wsTitle = h('div', { class: 'wstitle' }); const list = h('div', { class: 'glist' }); const msg = h('p', { class: 'err', role: 'alert' });
   const setNote = h('p', { class: 'hint', id: 'gSetNote' });
   const updSetNote = () => { const off = math ? L.filter(l => canonSet(Math.min(Number(l.grade) || 1, 10)) !== setG) : []; setNote.hidden = !off.length; setNote.textContent = off.length ? off.length + ' of ' + L.length + ' learners are in a different grade from the ' + setName(setG) + ' worksheets: ' + off.slice(0, 3).map(l => l.name.split(' ')[0] + ' (Gr ' + l.grade + ')').join(', ') + (off.length > 3 ? ' and ' + (off.length - 3) + ' more.' : '.') : ''; };
@@ -1452,8 +1455,9 @@ function sheetGroupLog(date) {
   const counts = () => { const c = { perfect: 0, redo: 0, absent: 0, skip: 0 }; rows.forEach(r => { c[r.st]++; }); return c; };
   const sum = h('p', { class: 'sub' });
   const draw = () => {
-    list.innerHTML = '';
+    list.innerHTML = ''; let gLast = null;
     rows.forEach(r => {
+      if (gnum(r.l) !== gLast) { gLast = gnum(r.l); list.append(gradeHead(gLast, gCnt[gLast])); }
       const sel = h('select', { 'aria-label': 'Result for ' + r.l.name, onchange: e => { r.st = e.target.value; draw(); } }, [['skip', 'Skip (no entry)'], ['perfect', '★ Perfect'], ['redo', '△ ○ Needs redo'], ['absent', 'Absent']].map(([v, t]) => h('option', { value: v, selected: r.st === v }, t)));
       const num = (k, label) => h('label', { class: 'gnum' }, h('span', {}, label), h('input', { type: 'number', min: '0', max: '99', inputmode: 'numeric', value: String(r[k]), 'aria-label': label + ' for ' + r.l.name, oninput: e => { r[k] = Math.max(0, Number(e.target.value) || 0); } }));
       list.append(h('div', { class: 'grow ' + r.st }, h('strong', {}, r.l.name), sel, r.st === 'redo' ? h('div', { class: 'gnums' }, num('tri', '△'), num('circ', '○')) : null));
@@ -1544,12 +1548,12 @@ function sheetGroupLogReading(date) {
   let sel = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] || '1'; const cur = () => OPTS.find(o => o[0] === sel); const ksOfSel = () => Number(sel[0]); const trackOfSel = () => cur()[1];
   const groupKey = l => { const k = ksFor(l); return k === 1 ? '1' : k + (trackFor(l, k) === 'Plus' ? 'P' : 'B'); };
   const guess = () => { const c = {}; L.filter(l => groupKey(l) === sel).forEach(l => { const p = nextRead(lastLessonEntry(l.id), ksOfSel(), trackOfSel()); const n = readSeq(trackOfSel(), p.wk, p.ss, p.num); c[n] = (c[n] || 0) + 1; }); const k = Object.keys(c).sort((a, b) => c[b] - c[a])[0]; return posFromSeq(trackOfSel(), Number(k || 1)); };
-  let glang = 'fil'; let pos = guess(); let gno = 0, gof = 0; const rows = L.map(l => ({ l, st: 'skip', ok: null })); const langBox = h('div', {}); const posBox = h('div', { class: 'stack' }); const list = h('div', { class: 'glist' }); const sum = h('p', { class: 'sub' }); const msg = h('p', { class: 'err', role: 'alert' });
+  let glang = 'fil'; let pos = guess(); let gno = 0, gof = 0; const rows = byGrade(L).map(l => ({ l, st: 'skip', ok: null })); const gCnt = gradeCounts(L); const langBox = h('div', {}); const posBox = h('div', { class: 'stack' }); const list = h('div', { class: 'glist' }); const sum = h('p', { class: 'sub' }); const msg = h('p', { class: 'err', role: 'alert' });
   const drawLang = () => { langBox.innerHTML = ''; if (trackOfSel() !== 'KS1') return; const lseg = h('div', { class: 'seg', id: 'gLang' }, [['fil', 'Filipino guide'], ['en', 'English guide']].map(([k, t]) => h('button', { id: 'glang_' + k, class: glang === k ? 'on' : '', onclick: () => { glang = k; drawLang(); } }, t))); langBox.append(h('label', { class: 'fld' }, h('span', {}, 'Key Stage 1 has one program, with no Basic or Plus. Which guide?'), lseg)); };
   const drawPos = () => { drawLang(); posBox.innerHTML = ''; if (trackOfSel() === 'KS1') posBox.append(stepperRow('Session no.', () => pos.num, v => { pos.num = v; }, 1, 40)); else posBox.append(stepperRow('Week', () => pos.wk, v => { pos.wk = v; }, 1, 8, drawLas), stepperRow('Session', () => pos.ss, v => { pos.ss = v; }, 1, 4, drawLas)); };
   const draw = () => {
-    list.innerHTML = ''; if (gof > 0) rows.forEach(r => { if (r.st === 'help' || r.st === 'notyet') r.st = 'perfect'; });
-    rows.forEach(r => { const g = OPTS.find(o => o[0] === groupKey(r.l)); const sl = h('select', { 'aria-label': 'Result for ' + r.l.name, onchange: e => { r.st = e.target.value; draw(); } }, (gof > 0 ? [['skip', 'Skip (no entry)'], ['perfect', 'Present (score it)'], ['absent', 'Absent']] : [['skip', 'Skip (no entry)'], ['perfect', '\u2605 Did well'], ['help', '\u25B3 Needed help'], ['notyet', '\u25CB Not yet'], ['absent', 'Absent']]).map(([v, t]) => h('option', { value: v, selected: r.st === v }, t)));
+    list.innerHTML = ''; let gLast = null; if (gof > 0) rows.forEach(r => { if (r.st === 'help' || r.st === 'notyet') r.st = 'perfect'; });
+    rows.forEach(r => { if (gnum(r.l) !== gLast) { gLast = gnum(r.l); list.append(gradeHead(gLast, gCnt[gLast])); } const g = OPTS.find(o => o[0] === groupKey(r.l)); const sl = h('select', { 'aria-label': 'Result for ' + r.l.name, onchange: e => { r.st = e.target.value; draw(); } }, (gof > 0 ? [['skip', 'Skip (no entry)'], ['perfect', 'Present (score it)'], ['absent', 'Absent']] : [['skip', 'Skip (no entry)'], ['perfect', '\u2605 Did well'], ['help', '\u25B3 Needed help'], ['notyet', '\u25CB Not yet'], ['absent', 'Absent']]).map(([v, t]) => h('option', { value: v, selected: r.st === v }, t)));
       const scoreIn = gof > 0 && r.st === 'perfect' ? h('div', { class: 'gnums' }, h('label', { class: 'gnum' }, h('span', {}, 'Correct of ' + gof), h('input', { type: 'number', min: '0', max: String(gof), inputmode: 'numeric', value: String(r.ok == null ? gof : r.ok), 'aria-label': 'Items correct for ' + r.l.name, oninput: e => { r.ok = Math.max(0, Math.min(gof, Number(e.target.value) || 0)); } }))) : null;
       list.append(h('div', { class: 'grow ' + r.st }, h('span', {}, h('strong', {}, r.l.name), h('small', {}, '  Gr ' + r.l.grade + ' \u00B7 ' + g[2] + (lastEntry(r.l.id, 'reading') ? ' \u00B7 last ' + readLabel(lastEntry(r.l.id, 'reading')) : ''))), sl, scoreIn)); });
     const c = { perfect: 0, help: 0, notyet: 0, absent: 0, skip: 0 }; rows.forEach(r => { c[r.st]++; }); sum.textContent = gof > 0 ? c.perfect + ' to score \u00B7 ' + c.absent + ' absent \u00B7 ' + c.skip + ' skipped' : c.perfect + ' did well \u00B7 ' + c.help + ' needed help \u00B7 ' + c.notyet + ' not yet \u00B7 ' + c.absent + ' absent \u00B7 ' + c.skip + ' skipped';
