@@ -710,7 +710,7 @@ const PRACTICE = {"Basic": {"W1S1": {"name": "Magsanay Tayo", "lang": "Filipino"
 
 /* ================= CONFIG ================= */
 const CONFIG = {
-  VERSION: '1.6',
+  VERSION: '1.7',
   // Paste each district's Apps Script web app URL (ends with /exec) in "url".
   DISTRICTS: [
     { code: 'ALC', name: 'Alcantara', url: 'https://script.google.com/macros/s/AKfycbzzJn38tC46ftiXdXrjgndOM7s7CfcAhcEUpKdnW1SyhlOW3GBUXtBG9D9QllZTOUHN8g/exec' },
@@ -1074,9 +1074,18 @@ function groupSelect(val) { return h('select', {}, h('option', { value: 'regular
 function schoolIsNew(s) { return !!s && !schoolsOfDistrict().some(x => x.toLowerCase() === s.toLowerCase()); }
 function nextSeq() { const pre = P.session.tutor_id + '-'; let m = 0; D().learners.forEach(l => { if (l.id.startsWith(pre)) m = Math.max(m, Number(l.id.slice(pre.length)) || 0); }); return m; }
 
+/* One line of the Add learners box. Accepted: "Name", "Name, 3", "Name, Grade 3", "Name, Gr. 3", "Name, G3", "Name Grade 3".
+   When a grade was clearly typed but cannot be read (for example 11, or "Grade" with no number) the line is marked bad, so the app never saves a guessed grade. */
+function parseLearnerLine(line, defGrade) {
+  const a = line.match(/^(.*?)[,;\t]\s*(?:(?:grade|gr\.?|g)\s*)?(\d{1,2})\s*$/i) || line.match(/^(.*?)\s+(?:grade|gr\.?|g)\s*(\d{1,2})\s*$/i);
+  if (a) { const g = Number(a[2]); if (g >= 1 && g <= 10) return { name: a[1].trim(), grade: g, bad: false }; return { name: line, grade: defGrade, bad: true }; }
+  const sep = Math.max(line.lastIndexOf(','), line.lastIndexOf(';'), line.lastIndexOf('\t'));
+  if (sep >= 0 && /\d|grade|^\s*gr\b|^\s*g\b/i.test(line.slice(sep + 1))) return { name: line, grade: defGrade, bad: true };
+  return { name: line, grade: defGrade, bad: false };
+}
 function sheetBulk() {
   const sc = schoolInput((P.last && P.last.school) || P.session.school || ''); const gr = gradeSelect((P.last && P.last.grade) || 1); const gp = groupSelect((P.last && P.last.group) || 'regular');
-  const ta = h('textarea', { rows: '8', placeholder: 'One learner per line.\nJuan Dela Cruz\nMaria Santos, 3\n(Add a comma and a grade only if it differs from the grade above.)' });
+  const ta = h('textarea', { rows: '8', placeholder: 'One learner per line.\nJuan Dela Cruz\nMaria Santos, 3\n(Add a comma and the grade number only if it differs from the grade above. “Maria Santos, Grade 3” also works.)' });
   const msg = h('p', { class: 'err', role: 'alert' });
   openSheet(h('div', { class: 'stack' }, h('h2', {}, 'Add learners'),
     h('label', { class: 'fld' }, h('span', {}, 'School'), sc.wrap), h('div', { class: 'two' }, h('label', { class: 'fld' }, h('span', {}, 'Grade'), gr), h('label', { class: 'fld' }, h('span', {}, 'Group'), gp)),
@@ -1084,11 +1093,14 @@ function sheetBulk() {
     h('button', { class: 'btn primary wide', onclick: () => {
       const school = sc.value(); if (!school) { msg.textContent = 'Enter the learners’ school.'; return; }
       const lines = ta.value.split('\n').map(x => x.trim()).filter(Boolean); if (!lines.length) { msg.textContent = 'Add at least one name.'; return; }
-      let seq = nextSeq(); let n = 0;
-      lines.forEach(line => { let name = line, grade = Number(gr.value); const m = line.match(/^(.*?)[,;\t]\s*(\d{1,2})\s*$/); if (m && Number(m[2]) >= 1 && Number(m[2]) <= 10) { name = m[1].trim(); grade = Number(m[2]); }
-        if (!name) return; seq++; n++;
+      const parsed = lines.map(line => parseLearnerLine(line, Number(gr.value))); const bad = parsed.find(x => x.bad);
+      if (bad) { msg.textContent = 'The grade on this line cannot be read: “' + bad.name + '”. Type only a number from 1 to 10, like “Maria Santos, 3”. Nothing was saved.'; return; }
+      let seq = nextSeq(); let n = 0; const byG = {};
+      parsed.forEach(x => { const name = x.name, grade = x.grade;
+        if (!name) return; seq++; n++; byG[grade] = (byG[grade] || 0) + 1;
         addOp('learner', { id: P.session.tutor_id + '-' + pad3(seq), name, school, grade, group: gp.value, status: 'active', school_new: schoolIsNew(school) ? 1 : 0, enrolled: todayISO() }); });
-      P.last = Object.assign(P.last || {}, { school, grade: gr.value, group: gp.value }); save(); closeSheet(); render(); toast(n + ' learner' + (n === 1 ? '' : 's') + ' added');
+      const gk = Object.keys(byG).map(Number).sort((a, b) => a - b); const brk = gk.length > 1 ? ': ' + gk.map(g => 'Gr ' + g + ' \u00D7' + byG[g]).join(', ') : '';
+      P.last = Object.assign(P.last || {}, { school, grade: gr.value, group: gp.value }); save(); closeSheet(); render(); toast(n + ' learner' + (n === 1 ? '' : 's') + ' added' + brk);
     } }, 'Save learners')));
 }
 /* Saved sessions of one learner: the tutor can take out an entry that was saved by mistake. Only his own entries are here; the district sheet keeps a copy in the tab Tracker_removed. */
