@@ -162,6 +162,7 @@ table.mini{width:100%;border-collapse:collapse;font-size:14px}.mini th,.mini td{
 .stat-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:2px}.stat-card small{color:var(--ink2);font-weight:700}.stat-card strong{font-family:var(--disp);font-size:26px;line-height:1.15}.stat-card span{font-size:13px;color:var(--ink2)}
 .scrollx{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:var(--r)}
 table.rep{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}.rep th,.rep td{padding:8px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}.rep th:first-child{text-align:left;position:sticky;left:0;background:var(--card)}.rep thead th{font-size:12px;color:var(--ink2);text-align:right}.rep thead th:first-child{text-align:left}
+.rep tr.grp th{position:static;text-align:left;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink2);background:var(--paper);padding:6px 8px}
 .rep td.up{color:var(--leaf);font-weight:700}.rep td.down{color:var(--coral);font-weight:700}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px}.kv span{color:var(--ink2)}.kv strong{text-align:right;word-break:break-word}
 
@@ -710,7 +711,7 @@ const PRACTICE = {"Basic": {"W1S1": {"name": "Magsanay Tayo", "lang": "Filipino"
 
 /* ================= CONFIG ================= */
 const CONFIG = {
-  VERSION: '1.7',
+  VERSION: '1.8',
   // Paste each district's Apps Script web app URL (ends with /exec) in "url".
   DISTRICTS: [
     { code: 'ALC', name: 'Alcantara', url: 'https://script.google.com/macros/s/AKfycbzzJn38tC46ftiXdXrjgndOM7s7CfcAhcEUpKdnW1SyhlOW3GBUXtBG9D9QllZTOUHN8g/exec' },
@@ -1672,7 +1673,7 @@ function monitorScreen() {
 
 /* ================= REPORT ================= */
 function metrics() {
-  const rows = activeLearners().map(l => {
+  const rows = byGrade(activeLearners()).map(l => {
     const R = resultsFor(l.id); const n = R.numeracy || {}; const pr = x => (x ? { pre: x.pre ? x.pre.pct : null, post: x.post ? x.post.pct : null } : null);
     const rLangs = [['EN', 'English', pr(R.reading_en)], ['FIL', 'Filipino', pr(R.reading_fil)]].filter(x => x[2] && (x[2].pre != null || x[2].post != null)).map(x => ({ code: x[0], name: x[1], pre: x[2].pre, post: x[2].post }));
     const tr = D().tracker.filter(t => t.learner_id === l.id);
@@ -1703,8 +1704,8 @@ function scrReport() {
 function fmtGain(a, b, u) { if (a == null || b == null) return '—'; const g = round1(b - a); return (g > 0 ? '+' : '') + g + (u || ''); }
 function reportTable(rows) {
   return h('table', { class: 'rep' }, h('thead', {}, h('tr', {}, ['Learner', 'Gr', 'Num pre', 'Num post', 'Gain', 'Read pre', 'Read post', 'Gain', 'Reading program', 'WS math', 'Days'].map(t => h('th', {}, t)))),
-    h('tbody', {}, rows.map(r => h('tr', {}, h('th', {}, r.l.name), h('td', {}, r.l.grade), h('td', {}, r.nPre == null ? '—' : Math.round(r.nPre) + '%'), h('td', {}, r.nPost == null ? '—' : Math.round(r.nPost) + '%'), h('td', { class: gainCls(r.nPre, r.nPost) }, fmtGain(r.nPre, r.nPost)),
-      readCell(r, x => (x.pre == null ? '\u2014' : Math.round(x.pre) + '%')), readCell(r, x => (x.post == null ? '\u2014' : Math.round(x.post) + '%')), readCell(r, x => fmtGain(x.pre, x.post), true), h('td', {}, r.trackTxt, r.sTxt ? h('div', { class: 'hint' }, r.sTxt) : null, r.lasN ? h('div', { class: 'hint' }, 'LAS ' + Math.round(r.lasAvg) + '% (' + r.lasN + ')' + (r.lasN >= 6 ? ', last 5: ' + Math.round(r.lasRecent) + '%' : '')) : null, r.ciTxt ? h('div', { class: 'hint' }, r.ciTxt) : null), h('td', {}, r.wsMath || '—'), h('td', {}, r.days)))));
+    h('tbody', {}, rows.flatMap((r, i) => [(i === 0 || gnum(r.l) !== gnum(rows[i - 1].l) ? h('tr', { class: 'grp' }, h('th', { colspan: '11' }, (gnum(r.l) === 99 ? 'No grade' : 'Grade ' + gnum(r.l)) + ' (' + rows.filter(x => gnum(x.l) === gnum(r.l)).length + ')')) : null), h('tr', {}, h('th', {}, r.l.name), h('td', {}, r.l.grade), h('td', {}, r.nPre == null ? '—' : Math.round(r.nPre) + '%'), h('td', {}, r.nPost == null ? '—' : Math.round(r.nPost) + '%'), h('td', { class: gainCls(r.nPre, r.nPost) }, fmtGain(r.nPre, r.nPost)),
+      readCell(r, x => (x.pre == null ? '\u2014' : Math.round(x.pre) + '%')), readCell(r, x => (x.post == null ? '\u2014' : Math.round(x.post) + '%')), readCell(r, x => fmtGain(x.pre, x.post), true), h('td', {}, r.trackTxt, r.sTxt ? h('div', { class: 'hint' }, r.sTxt) : null, r.lasN ? h('div', { class: 'hint' }, 'LAS ' + Math.round(r.lasAvg) + '% (' + r.lasN + ')' + (r.lasN >= 6 ? ', last 5: ' + Math.round(r.lasRecent) + '%' : '')) : null, r.ciTxt ? h('div', { class: 'hint' }, r.ciTxt) : null), h('td', {}, r.wsMath || '—'), h('td', {}, r.days))])));
 }
 /* One line per reading language; a learner who took both English and Filipino shows both */
 function readCell(r, f, gain) { if (!r.rLangs.length) return h('td', {}, '\u2014'); const two = r.rLangs.length > 1; return h('td', {}, r.rLangs.map(x => h('div', { class: gain ? gainCls(x.pre, x.post) : '' }, (two ? x.code + ' ' : '') + f(x)))); }
