@@ -46,6 +46,7 @@ details{border:1px solid var(--line);border-radius:var(--r);background:#fff}summ
 .btn.good{background:var(--leaf);border-color:var(--leaf);color:#fff;font-size:20px;flex:1}
 .btn.bad{background:var(--card);border-color:var(--coral);color:var(--coral);font-size:20px;flex:1}
 .btn.mic{border-style:dashed;border-color:var(--ink2);color:var(--ink2);font-weight:400;align-self:center}
+.btn.alt{background:#EFE9FB;border-color:#6B4FC8;color:#4A2FA3}.btn.alt:hover{background:#E4DAF8}
 .btn.wide{width:100%}
 a.btn{text-decoration:none;color:var(--ink)}
 .stack.tight{gap:8px}
@@ -1487,7 +1488,7 @@ function sessionPanel(l, date) {
   const mk = absent => addOp('tracker', { entry_id: uid(), learner_id: l.id, tutor_id: P.session.tutor_id, date, domain: dom, worksheet: absent ? '' : ws, tri: absent ? 0 : tri, circ: absent ? 0 : circ, retries: absent ? 0 : redoCount(earlierTries(l.id, dom, math ? setG : 1, ws)), absent: absent ? 1 : 0, note: math ? 'set:G' + setG : '', created_at: new Date().toISOString() });
   return h('div', { class: 'spanel' }, startHint(l), setSel, setNote, wsRow, wsTitle, val(() => tri, v => { tri = v; }, 0, 99, '△ partly correct'), val(() => circ, v => { circ = v; }, 0, 99, '○ wrong'), tries, status,
     h('div', { class: 'two' }, h('button', { class: 'btn', onclick: () => { mk(true); S.openRow = null; render(); toast(l.name + ' marked absent'); } }, 'Absent'), h('button', { class: 'btn primary', onclick: () => { mk(false); S.openRow = null; render(); toast('Saved worksheet ' + ws); } }, 'Save worksheet')),
-    h('button', { class: 'btn wide', id: 'btnAlt', onclick: () => sheetAlt(dom, date, [l], false) }, 'Used other material (not ARAL)'));
+    h('button', { class: 'btn wide alt', id: 'btnAlt', onclick: () => sheetAlt(dom, date, [l], false) }, 'Used other material (not ARAL)'));
 }
 
 /* One tap per learner: the same worksheet for the whole group, with exceptions (needs redo or absent) */
@@ -1627,7 +1628,7 @@ function readingPanel(l, date) {
   };
   return h('div', { class: 'spanel' }, h('label', { class: 'fld' }, h('span', {}, 'Reading materials (ARAL-Reading)'), ksSel), progBox, actBox, posBox, markBox, info, readStripEl(l.id),
     h('div', { class: 'two' }, h('button', { class: 'btn', onclick: () => { mk(true); S.openRow = null; render(); toast(l.name + ' marked absent'); } }, 'Absent'), (saveBtn = h('button', { class: 'btn primary', id: 'btnSaveReading', onclick: () => { if (mk(false) === false) return; S.openRow = null; render(); toast(act === 'checkin' && ks === 1 ? 'Saved Progress Check-in ' + ci.n : 'Saved reading session'); } }, 'Save session'))),
-    h('button', { class: 'btn wide', id: 'btnAlt', onclick: () => sheetAlt('reading', date, [l], false) }, 'Used other material (not ARAL)'));
+    h('button', { class: 'btn wide alt', id: 'btnAlt', onclick: () => sheetAlt('reading', date, [l], false) }, 'Used other material (not ARAL)'));
 }
 function sheetGroupLogReading(date) {
   const L = activeLearners().filter(hasRead); if (!L.length) { toast('No learner is tutored in Reading.'); return; }
