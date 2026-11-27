@@ -92,7 +92,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--sea);outline:none;box
 .rn{flex:1;min-width:0;display:flex;flex-direction:column}.rn strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.rn small{color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chips{display:flex;gap:6px;flex:none}
 .chip{font-style:normal;font-size:12px;font-weight:700;padding:3px 8px;border-radius:99px;border:1.5px solid var(--line);color:var(--ink2)}
-.chip.ok{background:var(--leaf-l);border-color:var(--leaf);color:var(--leaf)}.chip.bad{background:var(--coral-l);border-color:var(--coral);color:var(--coral)}
+.chip.alt{background:#FFF4D6;border-color:#E3B341;color:#6B4E00}.chip.ok{background:var(--leaf-l);border-color:var(--leaf);color:var(--leaf)}.chip.bad{background:var(--coral-l);border-color:var(--coral);color:var(--coral)}
 .empty{text-align:center;padding:32px 12px;display:flex;flex-direction:column;gap:12px;align-items:center;background:var(--card);border:1px dashed var(--line);border-radius:var(--r)}.empty p{margin:0}
 
 /* sheet */
@@ -711,7 +711,7 @@ const PRACTICE = {"Basic": {"W1S1": {"name": "Magsanay Tayo", "lang": "Filipino"
 
 /* ================= CONFIG ================= */
 const CONFIG = {
-  VERSION: '1.8',
+  VERSION: '1.9',
   // Paste each district's Apps Script web app URL (ends with /exec) in "url".
   DISTRICTS: [
     { code: 'ALC', name: 'Alcantara', url: 'https://script.google.com/macros/s/AKfycbzzJn38tC46ftiXdXrjgndOM7s7CfcAhcEUpKdnW1SyhlOW3GBUXtBG9D9QllZTOUHN8g/exec' },
@@ -782,6 +782,15 @@ const S = { tab: 'learners', phase: autoPhase(), q: '', openRow: null, sdom: 'ma
 function save() { try { localStorage.setItem(LS, JSON.stringify(P)); } catch (e) { toast('Phone storage is full. Sync first, then free some space.'); } }
 function D() { const id = P.session.tutor_id; return P.data[id] || (P.data[id] = { learners: [], results: {}, tracker: [], queue: [], pulledAt: 0 }); }
 const activeLearners = () => D().learners.filter(l => l.status !== 'removed').sort((a, b) => a.name.localeCompare(b.name));
+/* What each learner is tutored in: both (also when not answered yet), math only or reading only. Dormant until the district sheet has the subjects column (d.subjOk). */
+const SUBJ = [['both', 'Math and Reading'], ['math', 'Math only'], ['reading', 'Reading only']];
+const subjOf = l => (l.subjects === 'math' || l.subjects === 'reading' ? l.subjects : 'both');
+const hasMath = l => subjOf(l) !== 'reading';
+const hasRead = l => subjOf(l) !== 'math';
+const hasDom = (l, dom) => (/^read/.test(dom) ? hasRead(l) : hasMath(l));
+const subjLabel = l => (SUBJ.find(x => x[0] === subjOf(l)) || SUBJ[0])[1];
+const subjPending = () => (D().subjOk ? activeLearners().filter(l => !l.subjects) : []);
+function subjSelect(val) { return h('select', { 'aria-label': 'Tutored in' }, SUBJ.map(([k, t]) => h('option', { value: k, selected: (val || 'both') === k }, t))); }
 /* Display order: grade 1 to 10, then no grade; A to Z by the name as typed inside each grade. Display only, it never changes what is saved. */
 const gnum = l => { const g = Number(l.grade); return g >= 1 ? g : 99; };
 const byGrade = arr => arr.slice().sort((x, y) => gnum(x) - gnum(y) || String(x.name).trim().localeCompare(String(y.name).trim(), 'en', { sensitivity: 'base', numeric: true }) || String(x.id).localeCompare(String(y.id)));
@@ -834,7 +843,7 @@ async function sync(manual) {
 async function pull() {
   const res = await api('pull', { tutor_id: P.session.tutor_id, token: P.session.token });
   if (!res.ok) { if (res.error === 'auth') { logout(true); } return false; }
-  const d = D(); d.learners = res.learners || []; d.results = {}; (res.results || []).forEach(r => { d.results[r.key] = r; }); d.tracker = res.tracker || [];
+  const d = D(); d.learners = res.learners || []; d.results = {}; (res.results || []).forEach(r => { d.results[r.key] = r; }); d.tracker = res.tracker || []; d.subjOk = !!res.subjects_ok;
   d.queue.forEach(applyOpLocal); d.pulledAt = Date.now(); save(); return true;
 }
 function renderPill() {
@@ -867,7 +876,7 @@ function render() {
     h('nav', { class: 'bar' }, [['learners', 'Learners', ICON.people], ['session', 'Today', ICON.clip], ['report', 'Report', ICON.chart], ['account', 'Account', ICON.user]].map(([k, t, ic]) =>
       h('button', { class: 'tab' + (S.tab === k ? ' on' : ''), onclick: () => { S.tab = k; S.openRow = null; render(); window.scrollTo(0, 0); }, 'aria-current': S.tab === k ? 'page' : null }, h('span', { html: ic }), h('span', {}, t))))
   );
-  renderPill();
+  renderPill(); maybeAskSubjects();
 }
 
 /* ================= LOGIN ================= */
@@ -1008,7 +1017,7 @@ function statusOf(lid, phase) {
 function scrLearners() {
   const all = activeLearners(); const box = h('div', { class: 'stack' });
   const seg = h('div', { class: 'seg', role: 'tablist' }, ['pre', 'post'].map(p => h('button', { class: S.phase === p ? 'on' : '', role: 'tab', 'aria-selected': S.phase === p, onclick: () => { S.phase = p; render(); } }, phaseLabel(p))));
-  const done = { n: 0, r: 0 }; all.forEach(l => { const s = statusOf(l.id, S.phase); if (s.num) done.n++; if (s.read) done.r++; });
+  const done = { n: 0, r: 0 }; all.forEach(l => { const s = statusOf(l.id, S.phase); if (s.num && hasMath(l)) done.n++; if (s.read && hasRead(l)) done.r++; }); const nN = all.filter(hasMath).length, nR = all.filter(hasRead).length;
   const list = h('div', { class: 'list' });
   const fill = () => {
     list.innerHTML = ''; const q = S.q.trim().toLowerCase();
@@ -1019,10 +1028,10 @@ function scrLearners() {
     rows.forEach(l => { const s = statusOf(l.id, S.phase);
       if (gnum(l) !== lastG) { lastG = gnum(l); list.append(gradeHead(lastG, cnt[lastG])); }
       list.append(h('button', { class: 'row ' + (l.group === 'pullout' ? 'pull' : 'reg'), onclick: () => sheetLearner(l.id) },
-        h('span', { class: 'av' }, initials(l.name)), h('span', { class: 'rn' }, h('strong', {}, l.name), h('small', {}, 'Grade ' + l.grade + ' · ' + (l.school || 'No school') + (l.group === 'pullout' ? ' · Pull-out' : ''))),
-        h('span', { class: 'chips' }, h('i', { class: 'chip' + (s.num ? ' ok' : '') }, 'Num'), h('i', { class: 'chip' + (s.read ? ' ok' : '') }, 'Read')))); });
+        h('span', { class: 'av' }, initials(l.name)), h('span', { class: 'rn' }, h('strong', {}, l.name), h('small', {}, 'Grade ' + l.grade + ' · ' + (l.school || 'No school') + (l.group === 'pullout' ? ' · Pull-out' : '') + (subjOf(l) !== 'both' ? ' · ' + subjLabel(l) : ''))),
+        h('span', { class: 'chips' }, hasMath(l) ? h('i', { class: 'chip' + (s.num ? ' ok' : '') }, 'Num') : null, hasRead(l) ? h('i', { class: 'chip' + (s.read ? ' ok' : '') }, 'Read') : null))); });
   };
-  box.append(seg, h('div', { class: 'sumline' }, h('strong', {}, all.length + ' learners'), h('span', {}, phaseLabel(S.phase) + ': numeracy ' + done.n + '/' + all.length + ', reading ' + done.r + '/' + all.length)),
+  box.append(seg, h('div', { class: 'sumline' }, h('strong', {}, all.length + ' learners'), h('span', {}, phaseLabel(S.phase) + ': numeracy ' + done.n + '/' + nN + ', reading ' + done.r + '/' + nR)), subjPending().length ? h('button', { class: 'btn wide', id: 'btnSubj', onclick: () => sheetSubjects() }, subjPending().length + ' learner' + (subjPending().length === 1 ? '' : 's') + ': tell us if Math only, Reading only, or both') : null,
     h('div', { class: 'tools' }, h('input', { type: 'search', placeholder: 'Search name or school', value: S.q, 'aria-label': 'Search learners', oninput: e => { S.q = e.target.value; fill(); } }), h('button', { class: 'btn primary', onclick: () => sheetBulk() }, 'Add')), list);
   fill(); return box;
 }
@@ -1052,7 +1061,7 @@ function preMarks(l, res) { const lv = Number(res.test_level) || Number(l.grade)
 function learnerStart(l, R) { const pre = R.numeracy && R.numeracy.pre; if (!pre || !pre.answers) return null; const m = preMarks(l, pre); return startPanel(m.level, m.marks); }
 function startHint(l) {
   const pre = (resultsFor(l.id).numeracy || {}).pre; if (!pre || !pre.answers) return null;
-  if (D().tracker.some(t => t.learner_id === l.id && t.domain === 'math')) return null;
+  if (D().tracker.some(t => t.learner_id === l.id && t.domain === 'math' && !isAlt(t))) return null;
   const m = preMarks(l, pre); const gs = placeGroups(m.level, m.marks); if (!gs.length) return null;
   return h('p', { class: 'hint' }, 'From the pretest, start with ' + setLabel(gs[0].set) + ' WS ' + fmtWs(gs[0].ws) + ' (' + gs[0].skill + ').');
 }
@@ -1061,8 +1070,8 @@ function sheetLearner(id) {
   const l = learnerById(id); if (!l) return; const R = resultsFor(id);
   const doms = Object.keys(R).sort();
   openSheet(h('div', { class: 'stack' },
-    h('h2', {}, l.name), h('p', { class: 'sub' }, 'Grade ' + l.grade + ' · ' + (l.school || 'No school') + ' · ' + (l.group === 'pullout' ? 'Pull-out group' : 'Regular group') + ' · Code ' + l.id),
-    h('div', { class: 'two' }, h('button', { class: 'btn primary', onclick: () => { closeSheet(); sheetNumLaunch(id); } }, 'Numeracy ' + (S.phase === 'pre' ? 'pretest' : 'posttest')), h('button', { class: 'btn primary', onclick: () => { closeSheet(); sheetReadLaunch(id); } }, 'Reading ' + (S.phase === 'pre' ? 'pretest' : 'posttest'))),
+    h('h2', {}, l.name), h('p', { class: 'sub' }, 'Grade ' + l.grade + ' · ' + (l.school || 'No school') + ' · ' + (l.group === 'pullout' ? 'Pull-out group' : 'Regular group') + (D().subjOk ? ' · ' + subjLabel(l) : '') + ' · Code ' + l.id),
+    h('div', { class: hasMath(l) && hasRead(l) ? 'two' : 'stack' }, hasMath(l) ? h('button', { class: 'btn primary', onclick: () => { closeSheet(); sheetNumLaunch(id); } }, 'Numeracy ' + (S.phase === 'pre' ? 'pretest' : 'posttest')) : null, hasRead(l) ? h('button', { class: 'btn primary', onclick: () => { closeSheet(); sheetReadLaunch(id); } }, 'Reading ' + (S.phase === 'pre' ? 'pretest' : 'posttest')) : null),
     h('div', { class: 'two' }, h('button', { class: 'btn', onclick: () => { closeSheet(); S.tab = 'session'; S.openRow = id; render(); } }, 'Log a session'), h('button', { class: 'btn', onclick: () => { closeSheet(); sheetEdit(id); } }, 'Edit learner')),
     h('button', { class: 'btn wide', onclick: () => { closeSheet(); sheetEntries(id); } }, 'Saved sessions (' + D().tracker.filter(t => t.learner_id === id).length + ')'),
     readStripEl(l.id), learnerStart(l, R),
@@ -1085,11 +1094,12 @@ function parseLearnerLine(line, defGrade) {
   return { name: line, grade: defGrade, bad: false };
 }
 function sheetBulk() {
-  const sc = schoolInput((P.last && P.last.school) || P.session.school || ''); const gr = gradeSelect((P.last && P.last.grade) || 1); const gp = groupSelect((P.last && P.last.group) || 'regular');
+  const sc = schoolInput((P.last && P.last.school) || P.session.school || ''); const gr = gradeSelect((P.last && P.last.grade) || 1); const gp = groupSelect((P.last && P.last.group) || 'regular'); const sj = subjSelect((P.last && P.last.subjects) || 'both');
   const ta = h('textarea', { rows: '8', placeholder: 'One learner per line.\nJuan Dela Cruz\nMaria Santos, 3\n(Add a comma and the grade number only if it differs from the grade above. “Maria Santos, Grade 3” also works.)' });
   const msg = h('p', { class: 'err', role: 'alert' });
   openSheet(h('div', { class: 'stack' }, h('h2', {}, 'Add learners'),
     h('label', { class: 'fld' }, h('span', {}, 'School'), sc.wrap), h('div', { class: 'two' }, h('label', { class: 'fld' }, h('span', {}, 'Grade'), gr), h('label', { class: 'fld' }, h('span', {}, 'Group'), gp)),
+    D().subjOk ? h('label', { class: 'fld' }, h('span', {}, 'Tutored in'), sj) : null,
     h('label', { class: 'fld' }, h('span', {}, 'Names (paste a list or type one per line)'), ta), msg,
     h('button', { class: 'btn primary wide', onclick: () => {
       const school = sc.value(); if (!school) { msg.textContent = 'Enter the learners’ school.'; return; }
@@ -1099,14 +1109,15 @@ function sheetBulk() {
       let seq = nextSeq(); let n = 0; const byG = {};
       parsed.forEach(x => { const name = x.name, grade = x.grade;
         if (!name) return; seq++; n++; byG[grade] = (byG[grade] || 0) + 1;
-        addOp('learner', { id: P.session.tutor_id + '-' + pad3(seq), name, school, grade, group: gp.value, status: 'active', school_new: schoolIsNew(school) ? 1 : 0, enrolled: todayISO() }); });
+        addOp('learner', { id: P.session.tutor_id + '-' + pad3(seq), name, school, grade, group: gp.value, status: 'active', school_new: schoolIsNew(school) ? 1 : 0, enrolled: todayISO(), subjects: D().subjOk ? sj.value : '' }); });
       const gk = Object.keys(byG).map(Number).sort((a, b) => a - b); const brk = gk.length > 1 ? ': ' + gk.map(g => 'Gr ' + g + ' \u00D7' + byG[g]).join(', ') : '';
-      P.last = Object.assign(P.last || {}, { school, grade: gr.value, group: gp.value }); save(); closeSheet(); render(); toast(n + ' learner' + (n === 1 ? '' : 's') + ' added' + brk);
+      P.last = Object.assign(P.last || {}, { school, grade: gr.value, group: gp.value, subjects: sj.value }); save(); closeSheet(); render(); toast(n + ' learner' + (n === 1 ? '' : 's') + ' added' + brk);
     } }, 'Save learners')));
 }
 /* Saved sessions of one learner: the tutor can take out an entry that was saved by mistake. Only his own entries are here; the district sheet keeps a copy in the tab Tracker_removed. */
 function entryLabel(t) {
   if (Number(t.absent)) return (t.domain === 'reading' ? 'Reading' : 'Math') + ' · Absent';
+  if (isAlt(t)) return (t.domain === 'reading' ? 'Reading' : 'Math') + ' · Other material: ' + (altField(t, 'am') || '-') + ' · ' + (altPerfName(altField(t, 'pf')) || '-');
   if (t.domain === 'reading' && ciOf(t)) return 'Reading · Check-in ' + ciOf(t); /* a check-in has no star or triangle */
   if (t.domain === 'reading') return 'Reading · ' + readLabel(t) + ' · ' + (Number(t.circ) ? '\u25CB Not yet' : Number(t.tri) ? '\u25B3 Needed help' : '\u2605 Did well');
   const st = entrySet(t); const tri = Number(t.tri) || 0, circ = Number(t.circ) || 0;
@@ -1124,13 +1135,30 @@ function sheetEntries(id) {
       } }, 'Delete'))) : h('p', { class: 'sub' }, 'No saved sessions yet.'),
     h('button', { class: 'btn wide', onclick: () => { closeSheet(); sheetLearner(id); } }, 'Back')));
 }
+/* One-time question for learners who were enrolled before: Math and Reading, Math only, or Reading only. Everyone starts on "Math and Reading", so the tutor only changes the exceptions. */
+function sheetSubjects() {
+  const L = byGrade(activeLearners()); const pick = {}; L.forEach(l => { pick[l.id] = subjOf(l); });
+  const list = h('div', { class: 'list' });
+  const draw = () => { list.innerHTML = ''; L.forEach(l => list.append(h('div', { class: 'row' }, h('span', { class: 'rn' }, h('strong', {}, l.name), h('small', {}, 'Grade ' + l.grade)),
+    h('select', { 'aria-label': 'Tutored in, ' + l.name, onchange: e => { pick[l.id] = e.target.value; } }, SUBJ.map(([k, t]) => h('option', { value: k, selected: pick[l.id] === k }, t)))))); };
+  draw();
+  openSheet(h('div', { class: 'stack' }, h('h2', {}, 'What do you tutor each learner in?'),
+    h('p', { class: 'sub' }, 'Some learners are tutored in Reading only or Math only. Everyone is set to Math and Reading. Change only the learners who are different, then tap Save. A learner is not asked for the test or the worksheets of a subject that is not tutored.'), list,
+    h('button', { class: 'btn primary wide', id: 'subjSave', onclick: () => { L.forEach(l => { if (!l.subjects || l.subjects !== pick[l.id]) addOp('learner', { id: l.id, subjects: pick[l.id] }); }); closeSheet(); render(); toast('Saved'); } }, 'Save'),
+    h('button', { class: 'btn wide', onclick: () => { try { sessionStorage.setItem('aral-subj-later', '1'); } catch (e) { } closeSheet(); render(); } }, 'Ask me later')));
+}
+function maybeAskSubjects() {
+  if (!P.session || S.monitor || !$('#sheet').hidden || !$('#test').hidden) return; if (!subjPending().length) return;
+  let later = false; try { later = sessionStorage.getItem('aral-subj-later') === '1'; } catch (e) { } if (later) return;
+  sheetSubjects();
+}
 function sheetEdit(id) {
-  const l = learnerById(id); const name = h('input', { type: 'text', value: l.name }); const sc = schoolInput(l.school); const gr = gradeSelect(l.grade); const gp = groupSelect(l.group);
+  const l = learnerById(id); const name = h('input', { type: 'text', value: l.name }); const sc = schoolInput(l.school); const gr = gradeSelect(l.grade); const gp = groupSelect(l.group); const sj = subjSelect(subjOf(l));
   const msg = h('p', { class: 'err' });
   openSheet(h('div', { class: 'stack' }, h('h2', {}, 'Edit learner'), h('label', { class: 'fld' }, h('span', {}, 'Full name'), name), h('label', { class: 'fld' }, h('span', {}, 'School'), sc.wrap),
-    h('div', { class: 'two' }, h('label', { class: 'fld' }, h('span', {}, 'Grade'), gr), h('label', { class: 'fld' }, h('span', {}, 'Group'), gp)), msg,
+    h('div', { class: 'two' }, h('label', { class: 'fld' }, h('span', {}, 'Grade'), gr), h('label', { class: 'fld' }, h('span', {}, 'Group'), gp)), D().subjOk ? h('label', { class: 'fld' }, h('span', {}, 'Tutored in'), sj) : null, msg,
     h('button', { class: 'btn primary wide', onclick: () => { if (!name.value.trim() || !sc.value()) { msg.textContent = 'Name and school are required.'; return; }
-      addOp('learner', { id, name: name.value.trim(), school: sc.value(), grade: Number(gr.value), group: gp.value, school_new: schoolIsNew(sc.value()) ? 1 : 0 }); closeSheet(); render(); toast('Saved'); } }, 'Save changes'),
+      addOp('learner', { id, name: name.value.trim(), school: sc.value(), grade: Number(gr.value), group: gp.value, school_new: schoolIsNew(sc.value()) ? 1 : 0, ...(D().subjOk ? { subjects: sj.value } : {}) }); closeSheet(); render(); toast('Saved'); } }, 'Save changes'),
     h('button', { class: 'btn danger wide', onclick: () => { if (confirm('Remove ' + l.name + ' from your list? Their test results stay in the district record.')) { addOp('learner', { id, status: 'removed' }); closeSheet(); render(); } } }, 'Remove from my list')));
 }
 
@@ -1358,6 +1386,15 @@ function finishPassage(R, l, phase, lang, form, words, ks) {
 const canonSet = g => (g === 8 ? 7 : g === 10 ? 9 : g);
 const setLabel = n => (n === 7 ? 'G7-8' : n === 9 ? 'G9-10' : 'G' + n);
 const entrySet = t => { const m = /set:G(\d+)/.exec(t.note || ''); return m ? canonSet(Number(m[1])) : null; };
+/* Other materials: the tutor taught with something other than the ARAL worksheets or activity sheets. It is saved as a normal tracker row with note alt:1 (no worksheet number, no triangle or circle), so it counts as a day present but never moves the worksheet, the star count or the redo count. */
+const isAlt = t => /(?:^|;)alt:1(?:;|$)/.test(t.note || '');
+const altClean = (s, n) => String(s == null ? '' : s).replace(/[;:\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n); /* ; and : are the separators of the note, so they are never kept from typed text */
+const altField = (t, k) => { const m = new RegExp('(?:^|;)' + k + ':([^;]*)').exec(t.note || ''); return m ? m[1].trim() : ''; };
+const ALT_PERF = [['vg', 'Very good'], ['g', 'Good'], ['f', 'Fair'], ['nh', 'Needs help'], ['nl', 'Needs a lot of help']];
+const ALT_MATS = ['Own worksheet or activity sheet', 'Textbook or book', 'Flashcards or cards', 'Game or hands-on activity', 'Online or printed material from another source', 'Other'];
+const ALT_WHYS = ['The ARAL material is too hard for the learner', 'The ARAL material is not available', 'The ARAL material does not fit the learner\u2019s level', 'The learner needed to review an earlier lesson', 'Other'];
+const altPerfName = c => { const x = ALT_PERF.find(q => q[0] === c); return x ? x[1] : ''; };
+const altNote = (mat, why, perf) => 'alt:1;am:' + altClean(mat, 110) + ';ar:' + altClean(why, 110) + ';pf:' + perf;
 /* Reading sessions: Key Stage 1 is counted by session number; Key Stages 2 and 3 have Basic and Plus, counted by week (1 to 8) and session (1 to 4). The tutor chooses the key stage, like the worksheet set in Math. */
 const ksOf = g => (Number(g) <= 3 ? 1 : Number(g) <= 6 ? 2 : 3);
 const KS_NAME = { 1: 'Key Stage 1 (Grades 1 to 3)', 2: 'Key Stage 2 (Grades 4 to 6)', 3: 'Key Stage 3 (Grades 7 to 10)' };
@@ -1367,7 +1404,7 @@ const langNote = t => { const m = /lang:(\w+)/.exec(t.note || ''); return m ? m[
 const ciOf = t => { const m = /ci:(\d)/.exec(t.note || ''); return m ? Number(m[1]) : null; };
 const ciData = t => { const g = k => { const m = new RegExp('(?:^|;)' + k + ':(\\d+)').exec(t.note || ''); return m ? Number(m[1]) : 0; }; return { n: ciOf(t), c: g('c'), tot: g('n'), secs: g('t') }; };
 const CI_SESSION = { fil: { 1: 15, 2: 24, 3: 31, 4: 36 } }; /* Progress Check-ins are numbered sessions in the Key Stage 1 Filipino schedule */
-function lastLessonEntry(lid) { const e = D().tracker.filter(t => t.learner_id === lid && t.domain === 'reading' && !Number(t.absent) && !ciOf(t)).sort((a, b) => (a.date + a.created_at < b.date + b.created_at ? -1 : 1)); return e[e.length - 1]; }
+function lastLessonEntry(lid) { const e = D().tracker.filter(t => t.learner_id === lid && t.domain === 'reading' && !Number(t.absent) && !isAlt(t) && !ciOf(t)).sort((a, b) => (a.date + a.created_at < b.date + b.created_at ? -1 : 1)); return e[e.length - 1]; }
 const lasData = t => { const g = k => { const m = new RegExp('(?:^|;)' + k + ':(\\d+)').exec(t.note || ''); return m ? Number(m[1]) : null; }; const of = g('of'); return of ? { no: g('las'), ok: Math.min(g('ok') || 0, of), of } : null; };
 const markFrom = (ok, of) => (ok >= of ? 'star' : ok / of >= 0.5 ? 'help' : 'not'); /* all right = star, half or more = triangle, less than half = circle */
 const MARK_SYM = { star: '\u2605', help: '\u25B3', not: '\u25CB' };
@@ -1391,37 +1428,38 @@ function trackFor(l, ks) {
   const R = resultsFor(l.id); const pre = (R.reading_en && R.reading_en.pre) || (R.reading_fil && R.reading_fil.pre); return pre && pre.mode === 'passage' ? (passageTrack(pre) || 'Plus') : 'Basic';
 }
 function readStripEl(lid) {
-  const e = D().tracker.filter(t => t.learner_id === lid && t.domain === 'reading' && !Number(t.absent)).sort((a, b) => (a.date + a.created_at < b.date + b.created_at ? -1 : 1)).slice(-12); if (!e.length) return null;
+  const e = D().tracker.filter(t => t.learner_id === lid && t.domain === 'reading' && !Number(t.absent) && !isAlt(t)).sort((a, b) => (a.date + a.created_at < b.date + b.created_at ? -1 : 1)).slice(-12); if (!e.length) return null;
   return h('div', { class: 'strip', 'aria-label': 'Recent reading sessions' }, h('span', {}, 'Recent:'), e.map(t => (ciOf(t) ? h('span', { class: 'sym ci', title: 'Progress Check-in ' + ciOf(t) }, 'CI' + ciOf(t)) : h('span', { class: 'sym ' + (Number(t.circ) ? 'circ' : Number(t.tri) ? 'tri' : 'star'), title: readLabel(t) }, Number(t.circ) ? '\u25CB' : Number(t.tri) ? '\u25B3' : '\u2605'))));
 }
 function readChip(mine) { const les = mine.filter(t => !Number(t.absent) && !ciOf(t)); if (!les.length) return 'Check-in'; const t = les[les.length - 1]; return Number(t.circ) ? '\u25CB Not yet' : Number(t.tri) ? '\u25B3 Needed help' : '\u2605 Did well'; }
 const setName = g => (g === 7 ? 'Grades 7 and 8' : g === 9 ? 'Grades 9 and 10' : 'Grade ' + g);
 const wsLabel = t => (t.domain === 'math' ? setLabel(entrySet(t) || 1) + ' WS ' + t.worksheet : readLabel(t));
-function lastEntry(lid, dom, set) { const e = D().tracker.filter(t => t.learner_id === lid && t.domain === dom && !Number(t.absent) && (set == null || (entrySet(t) || 1) === set)).sort((a, b) => (a.date + a.created_at < b.date + b.created_at ? -1 : 1)); return e[e.length - 1]; }
+function lastEntry(lid, dom, set) { const e = D().tracker.filter(t => t.learner_id === lid && t.domain === dom && !Number(t.absent) && !isAlt(t) && (set == null || (entrySet(t) || 1) === set)).sort((a, b) => (a.date + a.created_at < b.date + b.created_at ? -1 : 1)); return e[e.length - 1]; }
 function scrSession() {
   const date = S.date || todayISO(); const box = h('div', { class: 'stack' });
   const dateIn = h('input', { type: 'date', value: date, onchange: e => { S.date = e.target.value || todayISO(); render(); } });
   const seg = h('div', { class: 'seg' }, [['math', 'Math worksheets'], ['reading', 'Reading']].map(([k, t]) => h('button', { class: S.sdom === k ? 'on' : '', onclick: () => { S.sdom = k; render(); } }, t)));
-  const L = activeLearners(); const todays = D().tracker.filter(t => t.date === date);
+  const L0 = activeLearners(); const L = L0.filter(l => hasDom(l, S.sdom)); const todays = D().tracker.filter(t => t.date === date);
   const presentIds = new Set(todays.filter(t => !Number(t.absent)).map(t => t.learner_id));
   box.append(legend(), h('button', { class: 'btn primary wide', id: 'btnGroup', onclick: () => sheetGroupLog(date) }, 'Log the whole group at once'), h('div', { class: 'sumline' }, h('strong', {}, 'Session log'), h('span', {}, presentIds.size + ' present · ' + todays.filter(t => Number(t.absent)).length + ' absent')), h('div', { class: 'two' }, h('label', { class: 'fld' }, h('span', {}, 'Date'), dateIn), h('div', { class: 'fld' }, h('span', {}, 'Subject'), seg)));
-  if (!L.length) { box.append(h('div', { class: 'empty' }, h('p', {}, 'Add learners first.'), h('button', { class: 'btn primary', onclick: () => { S.tab = 'learners'; render(); } }, 'Go to Learners'))); return box; }
+  if (!L.length) { box.append(h('div', { class: 'empty' }, h('p', {}, L0.length ? 'No learner is tutored in ' + (S.sdom === 'reading' ? 'Reading' : 'Math') + '.' : 'Add learners first.'), h('button', { class: 'btn primary', onclick: () => { S.tab = 'learners'; render(); } }, 'Go to Learners'))); return box; }
+  if (L.length < L0.length) box.append(h('p', { class: 'hint' }, (L0.length - L.length) + ' learner' + (L0.length - L.length === 1 ? ' is' : 's are') + ' not tutored in ' + (S.sdom === 'reading' ? 'Reading' : 'Math') + ' and ' + (L0.length - L.length === 1 ? 'is' : 'are') + ' not listed here.'));
   const gSorted = byGrade(L); const gCnt = gradeCounts(L); let gLast = null;
   gSorted.forEach(l => {
     if (gnum(l) !== gLast) { gLast = gnum(l); box.append(gradeHead(gLast, gCnt[gLast])); }
     const mine = todays.filter(t => t.learner_id === l.id && t.domain === S.sdom); const absent = todays.some(t => t.learner_id === l.id && Number(t.absent));
-    const stars = mine.filter(t => !Number(t.absent) && !Number(t.tri) && !Number(t.circ)).length; const le = lastEntry(l.id, S.sdom);
+    const altM = mine.filter(isAlt); const realM = mine.filter(t => !isAlt(t)); const stars = realM.filter(t => !Number(t.absent) && !Number(t.tri) && !Number(t.circ)).length; const le = lastEntry(l.id, S.sdom);
     const open = S.openRow === l.id;
     box.append(h('div', { class: 'srow' + (open ? ' open' : '') },
       h('button', { class: 'shead', onclick: () => { S.openRow = open ? null : l.id; render(); } }, h('span', { class: 'av ' + (l.group === 'pullout' ? 'pull' : '') }, initials(l.name)), h('span', { class: 'rn' }, h('strong', {}, l.name), h('small', {}, 'Gr ' + l.grade + ' \u00B7 ' + (le ? 'Last: ' + wsLabel(le) + (Number(le.tri) || Number(le.circ) ? (S.sdom === 'reading' ? (Number(le.circ) ? ' (not yet)' : ' (needed help)') : ' (needs redo)') : ' ★') : 'No entries yet'))),
-        h('span', { class: 'chips' }, absent ? h('i', { class: 'chip bad' }, 'Absent') : mine.length ? h('i', { class: 'chip ok' }, S.sdom === 'reading' ? readChip(mine) : stars + '\u2605 ' + (mine.length - stars) + ' redo') : null)),
+        h('span', { class: 'chips' }, absent ? h('i', { class: 'chip bad' }, 'Absent') : null, !absent && realM.length ? h('i', { class: 'chip ok' }, S.sdom === 'reading' ? readChip(realM) : stars + '\u2605 ' + (realM.length - stars) + ' redo') : null, !absent && altM.length ? h('i', { class: 'chip alt' }, 'Other material \u00B7 ' + (altPerfName(altField(altM[altM.length - 1], 'pf')) || 'saved')) : null)),
       open ? sessionPanel(l, date) : null));
   });
   return box;
 }
 /* Redo rounds are counted by the app: every earlier try at the same worksheet that was not yet perfect is one redo round */
 function earlierTries(learnerId, dom, set, ws) {
-  return D().tracker.filter(t => t.learner_id === learnerId && t.domain === dom && !Number(t.absent) && String(t.worksheet) === String(ws) && (dom !== 'math' || (entrySet(t) || 1) === set))
+  return D().tracker.filter(t => t.learner_id === learnerId && t.domain === dom && !Number(t.absent) && !isAlt(t) && String(t.worksheet) === String(ws) && (dom !== 'math' || (entrySet(t) || 1) === set))
     .sort((a, b) => String(a.date + (a.created_at || '')).localeCompare(String(b.date + (b.created_at || ''))));
 }
 const redoCount = list => list.filter(t => Number(t.tri) || Number(t.circ)).length;
@@ -1448,14 +1486,15 @@ function sessionPanel(l, date) {
   const setSel = math ? h('label', { class: 'fld' }, h('span', {}, 'Worksheet set the learner is using (not the learner\u2019s grade)'), h('select', { id: 'wsSet', onchange: e => { setG = Number(e.target.value); ws = Math.min(nextWs(), maxWs()); showWs(); } }, [1, 2, 3, 4, 5, 6, 7, 9].map(g => h('option', { value: g, selected: g === setG }, g === 7 ? 'Grades 7 and 8' : g === 9 ? 'Grades 9 and 10' : 'Grade ' + g)))) : null;
   const mk = absent => addOp('tracker', { entry_id: uid(), learner_id: l.id, tutor_id: P.session.tutor_id, date, domain: dom, worksheet: absent ? '' : ws, tri: absent ? 0 : tri, circ: absent ? 0 : circ, retries: absent ? 0 : redoCount(earlierTries(l.id, dom, math ? setG : 1, ws)), absent: absent ? 1 : 0, note: math ? 'set:G' + setG : '', created_at: new Date().toISOString() });
   return h('div', { class: 'spanel' }, startHint(l), setSel, setNote, wsRow, wsTitle, val(() => tri, v => { tri = v; }, 0, 99, '△ partly correct'), val(() => circ, v => { circ = v; }, 0, 99, '○ wrong'), tries, status,
-    h('div', { class: 'two' }, h('button', { class: 'btn', onclick: () => { mk(true); S.openRow = null; render(); toast(l.name + ' marked absent'); } }, 'Absent'), h('button', { class: 'btn primary', onclick: () => { mk(false); S.openRow = null; render(); toast('Saved worksheet ' + ws); } }, 'Save worksheet')));
+    h('div', { class: 'two' }, h('button', { class: 'btn', onclick: () => { mk(true); S.openRow = null; render(); toast(l.name + ' marked absent'); } }, 'Absent'), h('button', { class: 'btn primary', onclick: () => { mk(false); S.openRow = null; render(); toast('Saved worksheet ' + ws); } }, 'Save worksheet')),
+    h('button', { class: 'btn wide', id: 'btnAlt', onclick: () => sheetAlt(dom, date, [l], false) }, 'Used other material (not ARAL)'));
 }
 
 /* One tap per learner: the same worksheet for the whole group, with exceptions (needs redo or absent) */
 function sheetGroupLog(date) {
   if (S.sdom === 'reading') return sheetGroupLogReading(date);
-  const dom = S.sdom; const math = dom === 'math'; const L = activeLearners();
-  if (!L.length) { toast('Add learners first.'); return; }
+  const dom = S.sdom; const math = dom === 'math'; const L = activeLearners().filter(hasMath);
+  if (!L.length) { toast('No learner is tutored in Math.'); return; }
   const grades = {}; L.forEach(l => { const g = canonSet(Math.min(Number(l.grade) || 1, 10)); grades[g] = (grades[g] || 0) + 1; });
   let setG = math ? Number(Object.keys(grades).sort((a, b) => grades[b] - grades[a])[0]) : 0;
   const maxWs = () => (math && WS_TITLES[setG] ? WS_TITLES[setG].length - 1 : 999);
@@ -1482,7 +1521,7 @@ function sheetGroupLog(date) {
   const wsRow = h('div', { class: 'stepper' }, h('span', {}, 'Worksheet no.'), h('button', { class: 'btn', 'aria-label': 'Previous worksheet', onclick: () => { ws = Math.max(1, ws - 1); showWs(); } }, '−'), wsNum, h('button', { class: 'btn', 'aria-label': 'Next worksheet', onclick: () => { ws = Math.min(maxWs(), ws + 1); showWs(); } }, '+'));
   showWs(); draw();
   openSheet(h('div', { class: 'stack' }, h('h2', {}, 'Log the whole group'), h('p', { class: 'sub' }, (math ? 'Math' : 'Reading') + ' · ' + date + '. Same worksheet for everyone. Set the learners who need a redo or were absent.'),
-    setSel, setNote, wsRow, wsTitle, h('div', { class: 'two' }, h('button', { class: 'btn', id: 'gAllStar', onclick: () => setAll('perfect') }, '★ Everyone perfect'), h('button', { class: 'btn', onclick: () => setAll('skip') }, 'Clear all')), list, sum, msg,
+    setSel, setNote, wsRow, wsTitle, h('div', { class: 'two' }, h('button', { class: 'btn', id: 'gAllStar', onclick: () => setAll('perfect') }, '★ Everyone perfect'), h('button', { class: 'btn', onclick: () => setAll('skip') }, 'Clear all')), h('button', { class: 'btn wide', id: 'gAlt', onclick: () => sheetAlt(dom, date, L, true) }, 'The group used other material (not ARAL)'), list, sum, msg,
     h('button', { class: 'btn primary wide', id: 'gSave', onclick: () => {
       msg.textContent = ''; const c = counts(); if (c.perfect + c.redo + c.absent === 0) { msg.textContent = 'Choose a result for at least one learner.'; return; }
       if (rows.some(r => r.st === 'redo' && !r.tri && !r.circ)) { msg.textContent = 'For “Needs redo”, enter how many △ or ○ the learner has.'; return; }
@@ -1490,6 +1529,41 @@ function sheetGroupLog(date) {
         addOp('tracker', { entry_id: uid(), learner_id: r.l.id, tutor_id: P.session.tutor_id, date, domain: dom, worksheet: ab ? '' : ws, tri: ab || r.st === 'perfect' ? 0 : r.tri, circ: ab || r.st === 'perfect' ? 0 : r.circ, retries: ab ? 0 : redoCount(earlierTries(r.l.id, dom, math ? setG : 1, ws)), absent: ab ? 1 : 0, note: math ? 'set:G' + setG : '', created_at: new Date().toISOString() }); n++; });
       closeSheet(); S.openRow = null; render(); toast(n + ' entries saved');
     } }, 'Save for the group')));
+}
+
+/* Other materials (not the ARAL worksheets): for one learner from the learner's panel, or for the group from Log the whole group.
+   The tutor writes the material and the reason and says how the learner did. Nothing here changes the worksheet number, the stars or the redo count. */
+function sheetAlt(dom, date, learners, group) {
+  const math = dom === 'math'; const rows = byGrade(learners).map(l => ({ l, st: group ? 'skip' : '' })); const gCnt = gradeCounts(rows.map(r => r.l)); const msg = h('p', { class: 'err', role: 'alert' }); const list = h('div', { class: 'glist' });
+  const perfOpts = (cur, grp) => (grp ? [['skip', 'Skip (no entry)']] : [['', 'Choose how the learner did']]).concat(ALT_PERF).concat(grp ? [['absent', 'Absent']] : []).map(([v, t]) => h('option', { value: v, selected: cur === v }, t));
+  const draw = () => {
+    list.innerHTML = ''; let gLast = null;
+    rows.forEach(r => { if (group && gnum(r.l) !== gLast) { gLast = gnum(r.l); list.append(gradeHead(gLast, gCnt[gLast])); }
+      list.append(h('div', { class: 'grow ' + (r.st === 'absent' ? 'absent' : r.st && r.st !== 'skip' ? 'perfect' : 'skip') }, h('strong', {}, r.l.name), h('select', { 'aria-label': 'How ' + r.l.name + ' did', onchange: e => { r.st = e.target.value; draw(); } }, perfOpts(r.st, group)))); });
+  };
+  const matSel = h('select', { id: 'altMatSel' }, [['', 'Choose the kind of material']].concat(ALT_MATS.map(t => [t, t])).map(([v, t]) => h('option', { value: v }, t)));
+  const matTxt = h('input', { id: 'altMatTxt', type: 'text', maxlength: '70', placeholder: 'Title or short description of the material' });
+  const whySel = h('select', { id: 'altWhySel' }, [['', 'Choose the main reason']].concat(ALT_WHYS.map(t => [t, t])).map(([v, t]) => h('option', { value: v }, t)));
+  const whyTxt = h('input', { id: 'altWhyTxt', type: 'text', maxlength: '90', placeholder: 'Write the reason' });
+  let lastWhy = ''; const fillWhy = () => { const v = whySel.value; if (!whyTxt.value.trim() || whyTxt.value === lastWhy) whyTxt.value = v === 'Other' ? '' : v; lastWhy = v === 'Other' ? '' : v; }; whySel.onchange = fillWhy;
+  const all = group ? h('label', { class: 'fld' }, h('span', {}, 'Same result for everyone (you can still change a learner)'), h('select', { id: 'altAll', onchange: e => { const v = e.target.value; if (v) rows.forEach(r => { r.st = v; }); draw(); e.target.value = ''; } }, [['', 'Choose…']].concat(ALT_PERF).map(([v, t]) => h('option', { value: v }, t)))) : null;
+  draw();
+  openSheet(h('div', { class: 'stack' }, h('h2', {}, 'Other material (not ARAL)'),
+    h('p', { class: 'sub' }, (math ? 'Math' : 'Reading') + ' · ' + date + (group ? ' · ' + rows.length + ' learners' : ' · ' + rows[0].l.name) + '. Use this when you taught with something other than the ARAL worksheets or activity sheets. It does not change the worksheet number or the ★ count.'),
+    h('label', { class: 'fld' }, h('span', {}, 'What kind of material did you use?'), matSel), h('label', { class: 'fld' }, h('span', {}, 'What material did you give?'), matTxt),
+    h('label', { class: 'fld' }, h('span', {}, 'Why did you not use the ARAL material?'), whySel), h('label', { class: 'fld' }, h('span', {}, 'Reason (write it in your own words)'), whyTxt),
+    all, h('p', { class: 'hint' }, group ? 'How did each learner perform in answering the material?' : 'How did the learner perform in answering the material?'), list, msg,
+    h('button', { class: 'btn primary wide', id: 'altSave', onclick: () => {
+      msg.textContent = ''; const mat = altClean(matSel.value + ' - ' + matTxt.value, 110), why = altClean(whyTxt.value, 110);
+      if (!matSel.value) { msg.textContent = 'Choose the kind of material.'; return; }
+      if (altClean(matTxt.value, 70).length < 3) { msg.textContent = 'Write what material you gave.'; return; }
+      if (!whySel.value) { msg.textContent = 'Choose the main reason.'; return; }
+      if (why.length < 3) { msg.textContent = 'Write the reason.'; return; }
+      const todo = rows.filter(r => r.st && r.st !== 'skip'); if (!todo.length) { msg.textContent = group ? 'Choose a result for at least one learner.' : 'Choose how the learner did.'; return; }
+      todo.forEach(r => { const ab = r.st === 'absent';
+        addOp('tracker', { entry_id: uid(), learner_id: r.l.id, tutor_id: P.session.tutor_id, date, domain: dom, worksheet: '', tri: 0, circ: 0, retries: 0, absent: ab ? 1 : 0, note: ab ? '' : altNote(mat, why, r.st), created_at: new Date().toISOString() }); });
+      closeSheet(); S.openRow = null; render(); toast(todo.length + (todo.length === 1 ? ' entry' : ' entries') + ' saved (other material)');
+    } }, 'Save'), h('button', { class: 'btn wide', onclick: closeSheet }, 'Cancel')));
 }
 
 function stepperRow(label, get, set, min, max, cb) {
@@ -1552,10 +1626,11 @@ function readingPanel(l, date) {
     addOp('tracker', { entry_id: uid(), learner_id: l.id, tutor_id: P.session.tutor_id, date, domain: 'reading', worksheet: absent ? '' : readSeq(track, pos.wk, pos.ss, pos.num), tri: !absent && !extra && eff === 'help' ? 1 : 0, circ: !absent && !extra && eff === 'not' ? 1 : 0, retries: 0, absent: absent ? 1 : 0, note: readNote(ks, track, pos.wk, pos.ss, lang) + extra + (!absent && !extra && practiceNow() ? ';pl:' + (practiceNow().lang === 'Filipino' ? 'fil' : 'en') + ';pg:' + String(practiceNow().pages).split(',')[0].trim() : '') + (scored ? (ks === 1 ? ';las:' + las.no : '') + ';ok:' + okv + ';of:' + las.of : ''), created_at: new Date().toISOString() }); return true;
   };
   return h('div', { class: 'spanel' }, h('label', { class: 'fld' }, h('span', {}, 'Reading materials (ARAL-Reading)'), ksSel), progBox, actBox, posBox, markBox, info, readStripEl(l.id),
-    h('div', { class: 'two' }, h('button', { class: 'btn', onclick: () => { mk(true); S.openRow = null; render(); toast(l.name + ' marked absent'); } }, 'Absent'), (saveBtn = h('button', { class: 'btn primary', id: 'btnSaveReading', onclick: () => { if (mk(false) === false) return; S.openRow = null; render(); toast(act === 'checkin' && ks === 1 ? 'Saved Progress Check-in ' + ci.n : 'Saved reading session'); } }, 'Save session'))));
+    h('div', { class: 'two' }, h('button', { class: 'btn', onclick: () => { mk(true); S.openRow = null; render(); toast(l.name + ' marked absent'); } }, 'Absent'), (saveBtn = h('button', { class: 'btn primary', id: 'btnSaveReading', onclick: () => { if (mk(false) === false) return; S.openRow = null; render(); toast(act === 'checkin' && ks === 1 ? 'Saved Progress Check-in ' + ci.n : 'Saved reading session'); } }, 'Save session'))),
+    h('button', { class: 'btn wide', id: 'btnAlt', onclick: () => sheetAlt('reading', date, [l], false) }, 'Used other material (not ARAL)'));
 }
 function sheetGroupLogReading(date) {
-  const L = activeLearners(); if (!L.length) { toast('Add learners first.'); return; }
+  const L = activeLearners().filter(hasRead); if (!L.length) { toast('No learner is tutored in Reading.'); return; }
   const OPTS = [['1', 'KS1', 'Key Stage 1'], ['2B', 'Basic', 'KS2 Basic'], ['2P', 'Plus', 'KS2 Plus'], ['3B', 'Basic', 'KS3 Basic'], ['3P', 'Plus', 'KS3 Plus']];
   const cnt = {}; L.forEach(l => { const k = ksFor(l); const key = k === 1 ? '1' : k + (trackFor(l, k) === 'Plus' ? 'P' : 'B'); cnt[key] = (cnt[key] || 0) + 1; });
   let sel = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] || '1'; const cur = () => OPTS.find(o => o[0] === sel); const ksOfSel = () => Number(sel[0]); const trackOfSel = () => cur()[1];
@@ -1591,7 +1666,7 @@ function sheetGroupLogReading(date) {
   };
   drawPos(); drawLas();
   openSheet(h('div', { class: 'stack' }, h('h2', {}, 'Log the whole group'), h('p', { class: 'sub' }, 'Reading \u00B7 ' + date + '. Same key stage, program, week, and session for everyone you mark. Skip learners who were in a different program today.'),
-    h('label', { class: 'fld' }, h('span', {}, 'Reading materials (ARAL-Reading)'), seg), langBox, posBox, lasRow, h('div', { class: 'two' }, h('button', { class: 'btn', id: 'gAllStar', onclick: () => { rows.forEach(r => { r.st = 'perfect'; }); draw(); } }, 'Everyone \u2605 did well'), h('button', { class: 'btn', onclick: () => { rows.forEach(r => { r.st = 'skip'; }); draw(); } }, 'Clear all')), selBtn, list, sum, msg,
+    h('label', { class: 'fld' }, h('span', {}, 'Reading materials (ARAL-Reading)'), seg), langBox, posBox, lasRow, h('div', { class: 'two' }, h('button', { class: 'btn', id: 'gAllStar', onclick: () => { rows.forEach(r => { r.st = 'perfect'; }); draw(); } }, 'Everyone \u2605 did well'), h('button', { class: 'btn', onclick: () => { rows.forEach(r => { r.st = 'skip'; }); draw(); } }, 'Clear all')), h('button', { class: 'btn wide', id: 'gAlt', onclick: () => sheetAlt('reading', date, L, true) }, 'The group used other material (not ARAL)'), selBtn, list, sum, msg,
     h('button', { class: 'btn primary wide', id: 'gSave', onclick: () => {
       msg.textContent = ''; if (rows.every(r => r.st === 'skip')) { msg.textContent = 'Choose a result for at least one learner.'; return; }
       let n = 0; rows.forEach(r => { if (r.st === 'skip') return; const ab = r.st === 'absent'; const sc = gof > 0 && r.st === 'perfect'; const okv = sc ? Math.min(r.ok == null ? gof : r.ok, gof) : 0; const eff = sc ? markFrom(okv, gof) : (r.st === 'help' ? 'help' : r.st === 'notyet' ? 'not' : 'star'); addOp('tracker', { entry_id: uid(), learner_id: r.l.id, tutor_id: P.session.tutor_id, date, domain: 'reading', worksheet: ab ? '' : readSeq(trackOfSel(), pos.wk, pos.ss, pos.num), tri: !ab && eff === 'help' ? 1 : 0, circ: !ab && eff === 'not' ? 1 : 0, retries: 0, absent: ab ? 1 : 0, note: readNote(ksOfSel(), trackOfSel(), pos.wk, pos.ss, glang) + (!ab && gprac() ? ';pl:' + (gprac().lang === 'Filipino' ? 'fil' : 'en') + ';pg:' + String(gprac().pages).split(',')[0].trim() : '') + (sc ? (ksOfSel() === 1 ? ';las:' + gno : '') + ';ok:' + okv + ';of:' + gof : ''), created_at: new Date().toISOString() }); n++; });
@@ -1645,7 +1720,7 @@ function monitorScreen() {
     return wrap;
   }
   const d0 = MON.data; const ix = {}; d0.headers.forEach((c, i) => { ix[c] = i; });
-  const rows = d0.rows.map(r => ({ district: r[ix.district], id: r[ix.tutor_id], name: r[ix.tutor_name], school: r[ix.school], learners: r[ix.learners], npre: r[ix.num_pre_pct], rpre: r[ix.read_pre_pct], l7: r[ix.last_7_days], last: r[ix.last_activity], since: r[ix.days_since], below: ix.below_grade === undefined ? null : (Number(r[ix.below_grade]) || 0), status: r[ix.status] }));
+  const rows = d0.rows.map(r => ({ district: r[ix.district], id: r[ix.tutor_id], name: r[ix.tutor_name], school: r[ix.school], learners: r[ix.learners], npre: r[ix.num_pre_pct], rpre: r[ix.read_pre_pct], l7: r[ix.last_7_days], last: r[ix.last_activity], since: r[ix.days_since], below: ix.below_grade === undefined ? null : (Number(r[ix.below_grade]) || 0), alt: ix.other_material === undefined ? null : (Number(r[ix.other_material]) || 0), sess: ix.sessions_logged === undefined ? 0 : (Number(r[ix.sessions_logged]) || 0), status: r[ix.status] }));
   const districts = [...new Set(rows.map(r => r.district))]; const counts = {}; rows.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
   const hasBelow = rows.some(r => r.below != null); const belowLearners = rows.reduce((a, r) => a + (r.below || 0), 0); const belowTutors = rows.filter(r => r.below > 0).length;
   const listBox = h('div', {}); const chipBox = h('div', { class: 'mchips' });
@@ -1655,8 +1730,8 @@ function monitorScreen() {
     list.sort(MON.sort === 'attention' ? (a, b) => (MON_ORDER[a.status] - MON_ORDER[b.status]) || String(a.id).localeCompare(String(b.id)) : (a, b) => String(a.id).localeCompare(String(b.id)));
     const pc = v => (v === '' || v == null ? '\u2014' : v + '%');
     listBox.innerHTML = ''; listBox.append(h('p', { class: 'hint', id: 'monCount' }, 'Showing ' + list.length + ' of ' + rows.length + ' tutors'),
-      h('div', { class: 'scrollx' }, h('table', { class: 'rep monTable' }, h('thead', {}, h('tr', {}, ['Tutor', 'School', 'Learners', 'Numeracy pretest', 'Reading pretest', 'Below grade', 'Last 7 days', 'Last activity', 'Status'].map(t => h('th', {}, t)))),
-        h('tbody', {}, list.map(r => h('tr', {}, h('th', {}, r.id + (r.name ? ' ' + r.name : '') + ' \u00B7 ' + r.district), h('td', {}, r.school), h('td', {}, r.learners), h('td', {}, pc(r.npre)), h('td', {}, pc(r.rpre)), h('td', {}, r.below == null ? '\u2014' : r.below > 0 ? h('span', { class: 'mst quiet' }, r.below) : 0), h('td', {}, r.l7), h('td', {}, r.last ? r.last + (r.since !== '' ? ' (' + r.since + ' d)' : '') : '\u2014'), h('td', {}, h('span', { class: 'mst ' + monCls(r.status) }, r.status))))))));
+      h('div', { class: 'scrollx' }, h('table', { class: 'rep monTable' }, h('thead', {}, h('tr', {}, ['Tutor', 'School', 'Learners', 'Numeracy pretest', 'Reading pretest', 'Below grade', 'Other material', 'Last 7 days', 'Last activity', 'Status'].map(t => h('th', {}, t)))),
+        h('tbody', {}, list.map(r => h('tr', {}, h('th', {}, r.id + (r.name ? ' ' + r.name : '') + ' \u00B7 ' + r.district), h('td', {}, r.school), h('td', {}, r.learners), h('td', {}, pc(r.npre)), h('td', {}, pc(r.rpre)), h('td', {}, r.below == null ? '\u2014' : r.below > 0 ? h('span', { class: 'mst quiet' }, r.below) : 0), h('td', {}, r.alt == null ? '\u2014' : r.alt > 0 ? h('span', { class: 'mst ' + (r.sess && r.alt / r.sess > 0.5 ? 'quiet' : 'notstarted') }, r.alt + (r.sess ? ' of ' + r.sess : '')) : 0), h('td', {}, r.l7), h('td', {}, r.last ? r.last + (r.since !== '' ? ' (' + r.since + ' d)' : '') : '\u2014'), h('td', {}, h('span', { class: 'mst ' + monCls(r.status) }, r.status))))))));
   };
   const drawChips = () => { chipBox.innerHTML = ''; [['', 'All ' + rows.length]].concat(['Active', 'Quiet', 'Not started', 'No learners yet'].map(s => [s, s + ' ' + (counts[s] || 0)])).forEach(([k, t]) => chipBox.append(h('button', { class: 'mchip' + (MON.status === k ? ' on' : ''), 'data-st': k, onclick: () => { MON.status = k; drawChips(); drawList(); } }, t)));
     if (hasBelow) chipBox.append(h('button', { class: 'mchip' + (MON.below ? ' on' : ''), 'data-st': '__below', onclick: () => { MON.below = !MON.below; drawChips(); drawList(); } }, 'Below grade ' + belowTutors)); };
@@ -1676,17 +1751,27 @@ function metrics() {
   const rows = byGrade(activeLearners()).map(l => {
     const R = resultsFor(l.id); const n = R.numeracy || {}; const pr = x => (x ? { pre: x.pre ? x.pre.pct : null, post: x.post ? x.post.pct : null } : null);
     const rLangs = [['EN', 'English', pr(R.reading_en)], ['FIL', 'Filipino', pr(R.reading_fil)]].filter(x => x[2] && (x[2].pre != null || x[2].post != null)).map(x => ({ code: x[0], name: x[1], pre: x[2].pre, post: x[2].post }));
-    const tr = D().tracker.filter(t => t.learner_id === l.id);
+    const trAll = D().tracker.filter(t => t.learner_id === l.id); const tr = trAll.filter(t => !isAlt(t)); const altRows = trAll.filter(t => isAlt(t) && !Number(t.absent)); const altCnt = {}; altRows.forEach(t => { const nm = altPerfName(altField(t, 'pf')); if (nm) altCnt[nm] = (altCnt[nm] || 0) + 1; }); const altTxt = ALT_PERF.map(q => q[1]).filter(nm => altCnt[nm]).map(nm => nm + ' \u00D7' + altCnt[nm]).join(', ');
     const rt = tr.filter(t => t.domain === 'reading').sort((a, b) => (a.date + a.created_at < b.date + b.created_at ? -1 : 1)); const tks = rt.filter(trackOf); const tn = t => (trackOf(t) === 'KS1' ? 'KS1' : 'KS' + (ksNote(t) || ksOf(l.grade)) + ' ' + trackOf(t));
     const trackFirst = tks.length ? tn(tks[0]) : ''; const trackLatest = tks.length ? tn(tks[tks.length - 1]) : ''; const trackTxt = !tks.length ? '\u2014' : trackFirst === trackLatest ? trackLatest : trackFirst + ' \u2192 ' + trackLatest; const presentRead = rt.filter(t => !Number(t.absent)); const les = presentRead.filter(t => !ciOf(t)); const sCirc = les.filter(t => Number(t.circ)).length; const sTri = les.filter(t => !Number(t.circ) && Number(t.tri)).length; const sStar = les.length - sCirc - sTri; const lasP = les.map(lasData).filter(Boolean).map(x => x.ok / x.of * 100); const lasAvg = lasP.length ? lasP.reduce((x, y) => x + y, 0) / lasP.length : null; const last5 = lasP.slice(-5); const lasRecent = last5.length ? last5.reduce((x, y) => x + y, 0) / last5.length : null; const sTxt = les.length ? '\u2605' + sStar + ' \u25B3' + sTri + ' \u25CB' + sCirc : ''; const cis = {}; presentRead.filter(ciOf).forEach(t => { const d = ciData(t); cis[d.n] = d.tot ? d.c / d.tot * 100 : null; }); const ciTxt = Object.keys(cis).map(k => 'CI' + k + ' ' + (cis[k] == null ? '\u2014' : Math.round(cis[k]) + '%')).join(' \u00B7 '); const readLast = presentRead.length ? readLabel(presentRead[presentRead.length - 1]) : '';
     const mx = d => Math.max(0, ...tr.filter(t => t.domain === d && !Number(t.absent) && t.worksheet !== '').map(t => Number(t.worksheet)));
     const mxMath = (() => { let best = 0; tr.forEach(t => { if (t.domain === 'math' && !Number(t.absent) && t.worksheet !== '') best = Math.max(best, (entrySet(t) || 1) * 1000 + Number(t.worksheet)); }); return best ? setLabel(Math.floor(best / 1000)) + '-' + (best % 1000) : ''; })();
-    const days = new Set(tr.filter(t => !Number(t.absent)).map(t => t.date)).size; const abs = new Set(tr.filter(t => Number(t.absent)).map(t => t.date)).size;
-    return { l, nPre: n.pre ? n.pre.pct : null, nPost: n.post ? n.post.pct : null, rLangs, trackFirst, trackLatest, trackTxt, readPresent: presentRead.length, readLast, cis, ciTxt, sStar, sTri, sCirc, sTxt, lasN: lasP.length, lasAvg, lasRecent, wsMath: mxMath, wsRead: mx('reading'), days, abs };
+    const days = new Set(trAll.filter(t => !Number(t.absent)).map(t => t.date)).size; const abs = new Set(tr.filter(t => Number(t.absent)).map(t => t.date)).size;
+    return { l, nPre: n.pre ? n.pre.pct : null, nPost: n.post ? n.post.pct : null, rLangs, trackFirst, trackLatest, trackTxt, readPresent: presentRead.length, readLast, cis, ciTxt, sStar, sTri, sCirc, sTxt, lasN: lasP.length, lasAvg, lasRecent, wsMath: mxMath, wsRead: mx('reading'), days, abs, altN: altRows.length, aralN: tr.filter(t => !Number(t.absent)).length, altD: { math: altRows.filter(t => !/^read/.test(t.domain)).length, reading: altRows.filter(t => /^read/.test(t.domain)).length }, aralD: { math: tr.filter(t => !Number(t.absent) && !/^read/.test(t.domain)).length, reading: tr.filter(t => !Number(t.absent) && /^read/.test(t.domain)).length }, altTxt };
   });
   return rows;
 }
 const avg = a => (a.length ? round1(a.reduce((x, y) => x + y, 0) / a.length) : null);
+/* Learners grouped by the share of their sessions that used other materials than the ARAL worksheets (same rule as the Summary) */
+const matGroup = (r, dom) => { const a = dom ? r.altD[dom] : r.altN, b = dom ? r.aralD[dom] : r.aralN; const t = a + b; return !t ? 'none' : !a ? 'aral' : a / t > 0.5 ? 'mostly' : 'mixed'; };
+const MAT_GROUPS = [['aral', 'ARAL only'], ['mixed', 'Mixed (1 to 50% other)'], ['mostly', 'Mostly other (over 50%)'], ['none', 'No session logged']];
+function matTable(rows) {
+  const gTxt = v => (v == null ? '\u2014' : (v > 0 ? '+' : '') + v);
+  const body = MAT_GROUPS.map(([k, name]) => { const np = rows.filter(r => matGroup(r, 'math') === k && r.nPre != null && r.nPost != null); const rp = []; rows.filter(r => matGroup(r, 'reading') === k).forEach(r => r.rLangs.forEach(x => { if (x.pre != null && x.post != null) rp.push(x); }));
+    return h('tr', {}, h('th', {}, name), h('td', {}, gTxt(avg(np.map(r => r.nPost - r.nPre))) + (np.length ? ' (' + np.length + ')' : '')), h('td', {}, gTxt(avg(rp.map(x => x.post - x.pre))) + (rp.length ? ' (' + rp.length + ')' : ''))); });
+  return h('div', { class: 'stack' }, h('h3', {}, 'Gain by the materials you used'), h('div', { class: 'scrollx' }, h('table', { class: 'rep' }, h('thead', {}, h('tr', {}, ['Materials used', 'Numeracy gain (learners)', 'Reading gain (results)'].map(t => h('th', {}, t)))), h('tbody', {}, body))),
+    h('p', { class: 'hint' }, 'Gain is in points, only for learners with both tests. The pretest and posttest are taken from the ARAL materials, so learners taught with other materials may score lower even if they learned. Read the groups side by side; this is not a proof of cause. Sessions saved before version 1.9 count as ARAL.'));
+}
 function scrReport() {
   const rows = metrics(); const box = h('div', { class: 'stack' });
   const nPairs = rows.filter(r => r.nPre != null && r.nPost != null); const rPairs = []; rows.forEach(r => r.rLangs.forEach(x => { if (x.pre != null && x.post != null) rPairs.push(x); }));
@@ -1698,14 +1783,15 @@ function scrReport() {
     h('div', { class: 'two' }, h('button', { class: 'btn', onclick: downloadCSV }, 'Download CSV'), h('button', { class: 'btn primary', onclick: printReport }, 'Print or save as PDF')));
   if (!rows.length) box.append(h('p', { class: 'sub' }, 'Add learners and run the pretest to see progress here.'));
   else box.append(h('div', { class: 'scrollx' }, reportTable(rows)));
+  if (rows.some(r => r.altN > 0)) box.append(matTable(rows));
   box.append(h('p', { class: 'hint' }, 'A learner who took reading in English and in Filipino shows both (EN, FIL). Gains are in percentage points of items read or answered correctly. Reports are built on this phone, so nothing extra is stored online.'));
   return box;
 }
 function fmtGain(a, b, u) { if (a == null || b == null) return '—'; const g = round1(b - a); return (g > 0 ? '+' : '') + g + (u || ''); }
 function reportTable(rows) {
   return h('table', { class: 'rep' }, h('thead', {}, h('tr', {}, ['Learner', 'Gr', 'Num pre', 'Num post', 'Gain', 'Read pre', 'Read post', 'Gain', 'Reading program', 'WS math', 'Days'].map(t => h('th', {}, t)))),
-    h('tbody', {}, rows.flatMap((r, i) => [(i === 0 || gnum(r.l) !== gnum(rows[i - 1].l) ? h('tr', { class: 'grp' }, h('th', { colspan: '11' }, (gnum(r.l) === 99 ? 'No grade' : 'Grade ' + gnum(r.l)) + ' (' + rows.filter(x => gnum(x.l) === gnum(r.l)).length + ')')) : null), h('tr', {}, h('th', {}, r.l.name), h('td', {}, r.l.grade), h('td', {}, r.nPre == null ? '—' : Math.round(r.nPre) + '%'), h('td', {}, r.nPost == null ? '—' : Math.round(r.nPost) + '%'), h('td', { class: gainCls(r.nPre, r.nPost) }, fmtGain(r.nPre, r.nPost)),
-      readCell(r, x => (x.pre == null ? '\u2014' : Math.round(x.pre) + '%')), readCell(r, x => (x.post == null ? '\u2014' : Math.round(x.post) + '%')), readCell(r, x => fmtGain(x.pre, x.post), true), h('td', {}, r.trackTxt, r.sTxt ? h('div', { class: 'hint' }, r.sTxt) : null, r.lasN ? h('div', { class: 'hint' }, 'LAS ' + Math.round(r.lasAvg) + '% (' + r.lasN + ')' + (r.lasN >= 6 ? ', last 5: ' + Math.round(r.lasRecent) + '%' : '')) : null, r.ciTxt ? h('div', { class: 'hint' }, r.ciTxt) : null), h('td', {}, r.wsMath || '—'), h('td', {}, r.days))])));
+    h('tbody', {}, rows.flatMap((r, i) => [(i === 0 || gnum(r.l) !== gnum(rows[i - 1].l) ? h('tr', { class: 'grp' }, h('th', { colspan: '11' }, (gnum(r.l) === 99 ? 'No grade' : 'Grade ' + gnum(r.l)) + ' (' + rows.filter(x => gnum(x.l) === gnum(r.l)).length + ')')) : null), h('tr', {}, h('th', {}, r.l.name, subjOf(r.l) !== 'both' ? h('div', { class: 'hint' }, subjLabel(r.l)) : null), h('td', {}, r.l.grade), h('td', {}, r.nPre == null ? '—' : Math.round(r.nPre) + '%'), h('td', {}, r.nPost == null ? '—' : Math.round(r.nPost) + '%'), h('td', { class: gainCls(r.nPre, r.nPost) }, fmtGain(r.nPre, r.nPost)),
+      readCell(r, x => (x.pre == null ? '\u2014' : Math.round(x.pre) + '%')), readCell(r, x => (x.post == null ? '\u2014' : Math.round(x.post) + '%')), readCell(r, x => fmtGain(x.pre, x.post), true), h('td', {}, r.trackTxt, r.sTxt ? h('div', { class: 'hint' }, r.sTxt) : null, r.lasN ? h('div', { class: 'hint' }, 'LAS ' + Math.round(r.lasAvg) + '% (' + r.lasN + ')' + (r.lasN >= 6 ? ', last 5: ' + Math.round(r.lasRecent) + '%' : '')) : null, r.ciTxt ? h('div', { class: 'hint' }, r.ciTxt) : null), h('td', {}, r.wsMath || '—'), h('td', {}, r.days, r.altN ? h('div', { class: 'hint' }, 'Other material: ' + r.altN + (r.altTxt ? ' (' + r.altTxt + ')' : '')) : null))])));
 }
 /* One line per reading language; a learner who took both English and Filipino shows both */
 function readCell(r, f, gain) { if (!r.rLangs.length) return h('td', {}, '\u2014'); const two = r.rLangs.length > 1; return h('td', {}, r.rLangs.map(x => h('div', { class: gain ? gainCls(x.pre, x.post) : '' }, (two ? x.code + ' ' : '') + f(x)))); }
@@ -1713,8 +1799,8 @@ const gainCls = (a, b) => (a == null || b == null ? '' : b > a ? 'up' : b < a ? 
 function csvCell(v) { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
 function csvRead(r, code) { const x = r.rLangs.find(y => y.code === code); return x ? [x.pre == null ? '' : round1(x.pre), x.post == null ? '' : round1(x.post), x.pre != null && x.post != null ? round1(x.post - x.pre) : ''] : ['', '', '']; }
 function downloadCSV() {
-  const head = ['learner_code', 'name', 'school', 'grade', 'group', 'numeracy_pre_pct', 'numeracy_post_pct', 'numeracy_gain', 'reading_en_pre_pct', 'reading_en_post_pct', 'reading_en_gain', 'reading_fil_pre_pct', 'reading_fil_post_pct', 'reading_fil_gain', 'reading_program_first', 'reading_program_latest', 'reading_sessions_present', 'reading_last_session', 'checkin1_pct', 'checkin2_pct', 'checkin3_pct', 'checkin4_pct', 'reading_sessions_star', 'reading_sessions_partly', 'reading_sessions_notyet', 'las_scored', 'las_avg_pct', 'las_last5_avg_pct', 'max_math_worksheet', 'max_reading_worksheet', 'days_present', 'days_absent'];
-  const lines = [head.join(',')]; metrics().forEach(r => lines.push([r.l.id, r.l.name, r.l.school, r.l.grade, r.l.group, r.nPre == null ? '' : round1(r.nPre), r.nPost == null ? '' : round1(r.nPost), r.nPre != null && r.nPost != null ? round1(r.nPost - r.nPre) : '', ...csvRead(r, 'EN'), ...csvRead(r, 'FIL'), r.trackFirst, r.trackLatest, r.readPresent, r.readLast, ...[1, 2, 3, 4].map(n => (r.cis[n] == null ? '' : round1(r.cis[n]))), r.sStar, r.sTri, r.sCirc, r.lasN, r.lasAvg == null ? '' : round1(r.lasAvg), r.lasRecent == null ? '' : round1(r.lasRecent), r.wsMath || '', r.wsRead || '', r.days, r.abs].map(csvCell).join(',')));
+  const head = ['learner_code', 'name', 'school', 'grade', 'group', 'numeracy_pre_pct', 'numeracy_post_pct', 'numeracy_gain', 'reading_en_pre_pct', 'reading_en_post_pct', 'reading_en_gain', 'reading_fil_pre_pct', 'reading_fil_post_pct', 'reading_fil_gain', 'reading_program_first', 'reading_program_latest', 'reading_sessions_present', 'reading_last_session', 'checkin1_pct', 'checkin2_pct', 'checkin3_pct', 'checkin4_pct', 'reading_sessions_star', 'reading_sessions_partly', 'reading_sessions_notyet', 'las_scored', 'las_avg_pct', 'las_last5_avg_pct', 'max_math_worksheet', 'max_reading_worksheet', 'days_present', 'days_absent', 'other_material_sessions', 'other_material_performance', 'material_group_numeracy', 'material_group_reading', 'tutored_in'];
+  const lines = [head.join(',')]; metrics().forEach(r => lines.push([r.l.id, r.l.name, r.l.school, r.l.grade, r.l.group, r.nPre == null ? '' : round1(r.nPre), r.nPost == null ? '' : round1(r.nPost), r.nPre != null && r.nPost != null ? round1(r.nPost - r.nPre) : '', ...csvRead(r, 'EN'), ...csvRead(r, 'FIL'), r.trackFirst, r.trackLatest, r.readPresent, r.readLast, ...[1, 2, 3, 4].map(n => (r.cis[n] == null ? '' : round1(r.cis[n]))), r.sStar, r.sTri, r.sCirc, r.lasN, r.lasAvg == null ? '' : round1(r.lasAvg), r.lasRecent == null ? '' : round1(r.lasRecent), r.wsMath || '', r.wsRead || '', r.days, r.abs, r.altN, r.altTxt, (MAT_GROUPS.find(g => g[0] === matGroup(r, 'math')) || [0, ''])[1], (MAT_GROUPS.find(g => g[0] === matGroup(r, 'reading')) || [0, ''])[1], subjLabel(r.l)].map(csvCell).join(',')));
   const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }); const a = h('a', { href: URL.createObjectURL(blob), download: 'ARAL-progress-' + P.session.tutor_id + '-' + todayISO() + '.csv' }); document.body.append(a); a.click(); a.remove();
 }
 function printReport() {
@@ -1760,6 +1846,12 @@ function sheetHelp(open) {
       h('p', {}, 'Do not give answers or reteach. Ask guiding questions and point the learner back to an easier worksheet.')),
     sec('daily', 'Every day (Today tab)',
       h('ol', {}, h('li', {}, 'Open Today and pick the date and subject.'), h('li', {}, 'For Reading: tap a learner, choose Basic or Plus (Grade 4 and up), then the week and session you taught. The marks are optional: if you type the score of the LAS the learner did in Let\u2019s Check (items in the LAS and items correct), the app sets the mark for you and keeps the learner\u2019s LAS average. In Key Stage 2 the app shows the practice activity of the session (for example Magsanay Tayo, with its workbook page) and asks for a score only when the activity has written items. In Key Stage 1, choose Progress Check-in on the day you give it and enter the totals from the scoring sheet.'), h('li', {}, 'Tap a learner. Set the worksheet number (it starts at the next one).'), h('li', {}, 'Set △ and ○ from your checking. Tap Save worksheet, or Absent.'))),
+    sec('altmat', 'When you used other materials',
+      h('p', {}, 'If the ARAL worksheet or activity sheet was too hard or you did not have it, and you taught with something else, do not log an ARAL worksheet. On Today, tap the learner (or Log the whole group), then tap \u201CUsed other material (not ARAL)\u201D. The date and subject are the ones you picked. Write the material you gave and the reason, then choose how the learner did in answering it: Very good, Good, Fair, Needs help, or Needs a lot of help.'),
+      h('p', {}, 'This does not change the worksheet number or the \u2605 count, so the learner continues from the same ARAL worksheet next time. Your coordinator can see how many sessions used other materials.')),
+    sec('subj', 'Math only, Reading only, or both',
+      h('p', {}, 'Some learners are tutored in only one subject. When you add a learner, choose what he or she is tutored in. For learners you added before, the app shows one list the first time you open it: everyone starts on Math and Reading, and you change only the learners who are different. You can change it any time in Edit learner.'),
+      h('p', {}, 'A Reading only learner does not appear in the Math worksheets or in the Numeracy test, and a Math only learner does not appear in Reading. Coverage numbers in your coordinator\u2019s report count only the learners tutored in that subject.')),
     sec('tests', 'Pretest and posttest',
       h('p', {}, 'Do the Pretest at the start and the Posttest at the end of the program. The app opens on Posttest from December 1. You can switch at the top of Learners.'),
       h('p', {}, h('strong', {}, 'Numeracy: '), 'Tap a learner, then Numeracy. The test is set to the learner\u2019s grade level and cannot be changed. The learner answers on the phone, or you type answers from paper. A ○ in the result means review that item. Correct answers are not shown so the posttest stays fair.'),
