@@ -524,7 +524,80 @@ function isCorrect(item, ans) {
   const v = parseVal(ans); if (isNaN(v)) return false;
   return Math.abs(v - item.v) < 1e-9;
 }
-if (typeof module !== 'undefined') module.exports = { genNumeracy, isCorrect, parseVal, BLUEPRINT, mkR, hashStr };
+/* ================= FORM C: a posttest on the worksheets the learner actually practised (v1.11) =================
+   Each ARAL worksheet is matched to a skill (FC_SKILLS) when the app has a generator for it. Worksheets about shapes, calendars, angles, solid
+   figures, probability and the like have no generator, so they cannot be tested here. The items are made from a seed (learner code + the list of skills),
+   so they are the same on screen and on paper. The result is saved as a Tracker row (alt:1;fc:1;fs:<skill numbers>;fm:<1/0 marks>), which the district
+   sheet already accepts. Form C is NOT a replacement of Form B: it has no pretest to compare with. */
+const FC_SKILLS = {
+  1: ['Counting objects', 'count', {}, 1], 2: ['Missing numbers', 'seq', {}, 1], 3: ['Patterns', 'pattern', {}, 3],
+  4: ['Addition facts to 10', 'add', { a: [1, 9], b: [1, 9], max: 10 }, 1], 5: ['Addition facts to 20', 'add', { a: [5, 12], b: [3, 9], max: 20 }, 1],
+  6: ['Comparing numbers to 20', 'cmp', { max: 20 }, 1], 7: ['Number words', 'numword', { lo: 11, hi: 99 }, 1],
+  8: ['Comparing numbers', 'cmp', { max: 999 }, 2], 9: ['Arranging numbers in order', 'order', {}, 2], 10: ['Number patterns (add 2, 5, 10)', 'seqstep', {}, 2],
+  11: ['Adding three 1-digit numbers', 'add3', {}, 2], 12: ['Adding 2-digit and 1-digit numbers', 'add', { a: [10, 89], b: [1, 9], regroup: true, max: 99 }, 2],
+  13: ['Adding 2-digit numbers', 'add', { a: [10, 60], b: [10, 39], regroup: true, max: 99 }, 2], 14: ['Subtracting a 1-digit number', 'sub', { a: [20, 99], b: [1, 9], regroup: true }, 2],
+  15: ['Subtracting 2-digit numbers', 'sub', { a: [30, 99], b: [10, 49], regroup: true }, 2], 16: ['Place value', 'place', { digits: 3 }, 3],
+  17: ['Adding 3-digit numbers', 'add', { a: [100, 700], b: [100, 299], regroup: true, max: 999 }, 3], 18: ['Subtracting 3-digit numbers', 'sub', { a: [300, 999], b: [100, 299], regroup: true }, 3],
+  19: ['Multiplying by 2, 3, 4, 5, 10', 'mul', { aList: [2, 3, 4, 5, 10], b: [2, 10] }, 3], 20: ['Dividing by 2, 3, 4, 5, 10', 'div', { dList: [2, 3, 4, 5, 10], q: [2, 10] }, 3],
+  21: ['Word problems (+ − × ÷)', 'wp', {}, 3], 22: ['Comparing fractions', 'fraccmp', {}, 4],
+  23: ['Adding 4-digit numbers', 'add', { a: [1000, 6999], b: [1000, 2999], regroup: true, max: 9999 }, 4], 24: ['Subtracting 4-digit numbers', 'sub', { a: [2000, 9999], b: [1000, 5999], regroup: true }, 4],
+  25: ['Multiplying by a 1-digit number', 'mul', { a: [101, 999], b: [2, 9] }, 4], 26: ['Multiplying 2-digit numbers', 'mul', { a: [11, 99], b: [11, 99] }, 4],
+  27: ['Multiplying by multiples of 10 and 100', 'mul', { a: [12, 999], bList: [10, 20, 30, 50, 100, 200, 300] }, 4], 28: ['Division facts (6 to 9)', 'div', { dList: [6, 7, 8, 9], q: [2, 9] }, 4],
+  29: ['Division with remainders', 'divr', { d: [3, 9], q: [10, 60] }, 4], 30: ['Dividing by 10 and 100', 'divten', { dList: [10, 100] }, 4],
+  31: ['Place value (4 digits)', 'place', { digits: 4 }, 4], 32: ['Rounding off (hundreds)', 'round', { to: 'hundred', lo: 1000, hi: 9999 }, 4],
+  33: ['Place value (5 digits)', 'place', { digits: 5 }, 5], 34: ['Rounding off (thousands)', 'round', { to: 'thousand', lo: 10000, hi: 99999 }, 5],
+  35: ['Multiplying up to thousands', 'mul', { a: [101, 999], b: [11, 99] }, 5], 36: ['Multiplying mentally', 'mul', { a: [12, 999], bList: [10, 100, 1000] }, 5],
+  37: ['Division', 'div', { d: [2, 9], q: [100, 900] }, 5], 38: ['Division of whole numbers', 'div', { d: [11, 25], q: [12, 99] }, 5],
+  39: ['Dividing by tens, hundreds, thousands', 'divten', { dList: [10, 100, 1000] }, 5], 40: ['Order of operations (Grade 5)', 'expr', { set: 'e5' }, 5],
+  41: ['Divisibility rules', 'divis', {}, 6], 42: ['Order of operations (Grade 6)', 'expr', { set: 'e6' }, 6], 43: ['Greatest common factor', 'gcf', {}, 6], 44: ['Least common multiple', 'lcm', {}, 6],
+  45: ['Multiplying fractions', 'frac:mul', {}, 6], 46: ['Dividing fractions', 'frac:div', {}, 6], 47: ['Area of a triangle', 'area', {}, 6],
+  49: ['Adding fractions', 'frac:add', {}, 7], 50: ['Subtracting fractions', 'frac:sub', {}, 7], 52: ['Adding decimals', 'dec:add', { dp: 2 }, 7], 53: ['Subtracting decimals', 'dec:sub', { dp: 2 }, 7],
+  54: ['Multiplying decimals', 'dec:mul', { w: [2, 12] }, 7], 55: ['Dividing decimals', 'dec:div', { w: [2, 9] }, 7], 56: ['Dividing by 0.1 and 0.01', 'divdec', {}, 7],
+  58: ['Speed, distance and time', 'speed', {}, 7], 59: ['Surface area', 'surf', {}, 7], 60: ['Adding integers', 'int:add', {}, 7], 61: ['Subtracting integers', 'int:sub', {}, 7],
+  62: ['Multiplying integers', 'int:mul', {}, 7], 63: ['Dividing integers', 'int:div', {}, 7], 64: ['Word problems (integers)', 'wp', {}, 7],
+  65: ['Order of operations (Grades 9-10)', 'expr', {}, 9], 66: ['Laws of exponents', 'explaw', {}, 9], 67: ['Square roots', 'sqrt', {}, 9], 68: ['Evaluating expressions', 'evalexp', {}, 9],
+  69: ['Adding and subtracting polynomials', 'poly', { mode: 'add' }, 9], 70: ['Multiplying polynomials', 'poly', { mode: 'mul' }, 9], 71: ['Linear equations', 'lineq', {}, 9],
+  72: ['Inequalities', 'ineq', {}, 9], 73: ['Factoring', 'factor', {}, 9], 74: ['Word problems with equations', 'wp', {}, 9]
+};
+/* worksheet title -> skill number(s), by set (7 = Grades 7-8, 9 = Grades 9-10). First rule that matches wins. */
+const FC_INT = [[/^Adding (Two|a) |^Adding Integers/, 60], [/^Subtracting (Two|a) |^Subtracting Integers/, 61], [/^Multiplying (Two|Integers)/, 62], [/^Division of Two|^Dividing Integers/, 63]];
+const FC_RULES = {
+  1: [[/Counting Objects|Matching Numbers/, 1], [/Missing Numbers/, 2], [/^Patterns$/, 3], [/Illustrating Addition/, 4], [/Finding the Sum \(\+[1-4]/, 4], [/Finding the Sum/, 5], [/Writing Numbers in Words|Writing Words into Numbers/, 7], [/Comparing Sets/, 6]],
+  2: [[/Counting Objects|Matching Numbers/, 1], [/Writing Numbers in Words|Writing Words into Numbers/, 7], [/Arranging/, 9], [/^Comparing Numbers$/, 8], [/Missing Numbers/, 10], [/^Patterns$/, 3], [/Illustrating Addition|^Addition of 1-Digit by 1-Digit$/, 5],
+    [/by 1-Digit by 1-Digit/, 11], [/Addition of 2-Digit by 1-Digit/, 12], [/Addition of 2-Digit Numbers/, 13], [/Illustrating Subtraction|Subtraction of 2-Digit by 1-Digit/, 14], [/Subtraction of 2-Digit Numbers/, 15]],
+  3: [[/Place Values|Reading and Writing Numbers|Expanded Form/, 16], [/Comparing and Ordering Numbers/, 8], [/Missing Terms in Patterns/, 3], [/Comparing and Arranging Fractions/, 22], [/Word Problems/, 21], [/^Addition of /, 17], [/^Subtraction of /, 18], [/Multiplication/, 19], [/Division/, 20]],
+  4: [[/Comparing Fractions|Ordering Fractions/, 22], [/Arranging Numbers|Ordering Numbers/, 9], [/Word Problem/, 21], [/^Addition of /, 23], [/^Subtraction of /, 24], [/Multiples of 10 and 100/, 27], [/by 2- digit/, 26], [/Multiplication of 2- to 3-digit Whole Number by 1-digit/, 25],
+    [/Division of Numbers up to 100 by 6|Division Facts/, 28], [/by 2-digit Whole Number/, 38], [/remainder/, 29], [/by 10 and 100/, 30], [/Value and Place Value|Determining the Value/, 31], [/Comparing Numbers Using/, 8], [/Rounding/, 32]],
+  5: [[/Value and Place Value|Determining the Value/, 33], [/Comparing Numbers/, 8], [/Rounding/, 34], [/Ordering/, 9], [/Word Problems Involving Multiplication|Multi-Step/, 21], [/Multiplying Numbers up to Thousands/, 35], [/Multiplying Mentally/, 36], [/Dividing Mentally/, 39],
+    [/^Division$/, 37], [/Division of Whole Numbers/, 38], [/Order of Operations/, 40]],
+  6: [[/Divisibility/, 41], [/Order of Operations/, 42], [/^Greatest Common/, 43], [/^Least Common/, 44], [/GCF and LCM/, [43, 44]], [/Multiplication of /, 45], [/Division of Fractions/, 46], [/Area of a Triangle/, 47]],
+  7: [[/Subtracting Similar Fractions/, 50], [/Adding Similar Fractions/, 49], [/Adding and Subtracting (Similar|Dissimilar)/, [49, 50]], [/^Multiplying Fractions/, 45], [/^Dividing Fractions/, 46], [/Adding Decimals|Adding and Subtracting Decimals/, 52], [/Subtracting Decimals/, 53], [/Multiplying Decimals/, 54],
+    [/Dividing Decimals/, 55], [/Dividing Whole Numbers by Decimals|Division by 0\.1/, 56], [/^Division by 10, 100/, 39], [/Speed, Distance/, 58], [/Surface Area of a (Rectangular Prism|Cube)/, 59]].concat(FC_INT),
+  9: [[/^Order of Operations/, 65], [/Laws of Exponents|Product Law|Power of Powers|Powers of Different|Evaluating Exponents|Evaluating Expressions Using/, 66], [/Square Roots/, 67], [/Evaluating Algebraic/, 68], [/Translating Expressions/, 74],
+    [/Adding Polynomials|Special Cases|Subtracting Polynomials|Polynomial Operations/, 69], [/Multiplying Polynomials|Multiplication and Division of Polynomials/, 70], [/^Linear Equations/, 71], [/Inequalities/, 72], [/^Factoring/, 73]].concat(FC_INT)
+};
+/* skill number(s) of one worksheet, or [] when there is no generator for it. set is the canonical set (8 counts as 7, 10 as 9). */
+function fcSkillsOf(set, ws) {
+  const titles = (typeof WS_TITLES !== 'undefined' && WS_TITLES[String(set)]) || []; const t = titles[ws] || ''; const rules = FC_RULES[set] || [];
+  for (let i = 0; i < rules.length; i++) { if (rules[i][0].test(t)) { const s = rules[i][1]; return Array.isArray(s) ? s.slice() : [s]; } }
+  return [];
+}
+const FC_VARIANTS = { 'frac:mul': 2, 'frac:div': 3, expr: 4, wp: 2 };
+/* Build the items of Form C. skills = skill numbers, most recent first (at most 12 are used); grade = the learner's grade. Same input, same items. */
+function genFormC(learnerId, grade, skills) {
+  const S = []; skills.forEach(s => { if (FC_SKILLS[s] && S.indexOf(s) < 0) S.push(s); }); const used = S.slice(0, 12); if (!used.length) return [];
+  const n = Math.min(12, 3 * used.length); const seen = new Set(); const items = []; const cnt = {}; const gl = Math.min(Math.max(Number(grade) || 1, 1), 10);
+  for (let k = 0; k < n; k++) {
+    const sid = used[k % used.length]; const [label, gen, p0, lv0] = FC_SKILLS[sid]; const v = cnt[sid] = (cnt[sid] || 0) + 1; let p = p0; let lv = lv0;
+    if (sid === 65) p = { set: gl >= 10 ? 'e10' : 'e9' }; if (sid === 68) p = { q: gl >= 10 }; if (sid === 74 || sid === 64) lv = sid === 74 ? 9 : 7; if (sid === 21) lv = 3;
+    const nv = gen === 'expr' ? ({ e5: 4, e6: 3, e9: 2, e10: 2 }[p.set] || 2) : (FC_VARIANTS[gen] || 0); const i = nv ? (v - 1) % nv : v - 1;
+    let it, tries = 0;
+    do { const r = mkR(hashStr(learnerId + '|C|' + used.join('.') + '|' + k + '|' + tries)); const rv = mkR(hashStr(learnerId + '|CV|' + used.join('.') + '|' + k + '|' + tries)); it = GEN[gen](r, p, i, lv, rv); tries++; } while (seen.has(it.q + (it.big || '')) && tries < 40);
+    seen.add(it.q + (it.big || '')); it.skill = gen.split(':')[0]; it.fsid = sid; it.no = k + 1; items.push(it);
+  }
+  return items;
+}
+if (typeof module !== 'undefined') module.exports = { genNumeracy, isCorrect, parseVal, BLUEPRINT, mkR, hashStr, genFormC, fcSkillsOf, FC_SKILLS };
 
 /* ================= READING: ARAL-Reading Key Stage 1 style check-in ================= */
 /* Six tasks, read one learner at a time, like the Progress Check-in tool in the Tutor's Guide:
@@ -713,7 +786,7 @@ const PRACTICE = {"Basic": {"W1S1": {"name": "Magsanay Tayo", "lang": "Filipino"
 
 /* ================= CONFIG ================= */
 const CONFIG = {
-  VERSION: '1.10',
+  VERSION: '1.11',
   // Paste each district's Apps Script web app URL (ends with /exec) in "url".
   DISTRICTS: [
     { code: 'ALC', name: 'Alcantara', url: 'https://script.google.com/macros/s/AKfycbzzJn38tC46ftiXdXrjgndOM7s7CfcAhcEUpKdnW1SyhlOW3GBUXtBG9D9QllZTOUHN8g/exec' },
@@ -1074,6 +1147,7 @@ function sheetLearner(id) {
   openSheet(h('div', { class: 'stack' },
     h('h2', {}, l.name), h('p', { class: 'sub' }, 'Grade ' + l.grade + ' · ' + (l.school || 'No school') + ' · ' + (l.group === 'pullout' ? 'Pull-out group' : 'Regular group') + (D().subjOk ? ' · ' + subjLabel(l) : '') + ' · Code ' + l.id),
     h('div', { class: hasMath(l) && hasRead(l) ? 'two' : 'stack' }, hasMath(l) ? h('button', { class: 'btn primary', onclick: () => { closeSheet(); sheetNumLaunch(id); } }, 'Numeracy ' + (S.phase === 'pre' ? 'pretest' : 'posttest')) : null, hasRead(l) ? h('button', { class: 'btn primary', onclick: () => { closeSheet(); sheetReadLaunch(id); } }, 'Reading ' + (S.phase === 'pre' ? 'pretest' : 'posttest')) : null),
+    S.phase === 'post' && hasMath(l) ? h('button', { class: 'btn alt wide', onclick: () => { closeSheet(); sheetFormC(id); } }, 'Form C: test on the worksheets practised') : null,
     h('div', { class: 'two' }, h('button', { class: 'btn', onclick: () => { closeSheet(); S.tab = 'session'; S.openRow = id; render(); } }, 'Log a session'), h('button', { class: 'btn', onclick: () => { closeSheet(); sheetEdit(id); } }, 'Edit learner')),
     h('button', { class: 'btn wide', onclick: () => { closeSheet(); sheetEntries(id); } }, 'Saved sessions (' + D().tracker.filter(t => t.learner_id === id).length + ')'),
     readStripEl(l.id), learnerStart(l, R),
@@ -1119,6 +1193,7 @@ function sheetBulk() {
 /* Saved sessions of one learner: the tutor can take out an entry that was saved by mistake. Only his own entries are here; the district sheet keeps a copy in the tab Tracker_removed. */
 function entryLabel(t) {
   if (Number(t.absent)) return (t.domain === 'reading' ? 'Reading' : 'Math') + ' · Absent';
+  if (isFc(t)) return 'Math · Form C test · ' + fcLine(t);
   if (isAlt(t)) return (t.domain === 'reading' ? 'Reading' : 'Math') + ' · Other material: ' + (altField(t, 'am') || '-') + ' · ' + (altPerfName(altField(t, 'pf')) || '-') + (altSk(t).length ? ' · Skills: ' + altSk(t).join(', ') : '');
   if (t.domain === 'reading' && ciOf(t)) return 'Reading · Check-in ' + ciOf(t); /* a check-in has no star or triangle */
   if (t.domain === 'reading') return 'Reading · ' + readLabel(t) + ' · ' + (Number(t.circ) ? '\u25CB Not yet' : Number(t.tri) ? '\u25B3 Needed help' : '\u2605 Did well');
@@ -1209,7 +1284,7 @@ function deviceView(T) {
     foot.append(h('button', { class: 'btn', disabled: T.i === 0, onclick: () => { T.i--; draw(); } }, 'Back'), h('button', { class: 'btn primary', onclick: next }, T.i === T.items.length - 1 ? 'Finish' : 'Next'));
   };
   const next = () => { if (T.i < T.items.length - 1) { T.i++; draw(); } else { setKey(null); finishNumeracy(T); } };
-  wrap.append(topTest('Numeracy · ' + T.l.name, phaseLabel(T.phase) + ' · Form ' + T.form + ' · Level ' + T.level, () => { closeTest(); }), bar, body, foot);
+  wrap.append(topTest('Numeracy · ' + T.l.name, phaseLabel(T.phase) + ' · Form ' + T.form + (T.form === 'C' ? '' : ' · Level ' + T.level), () => { closeTest(); }), bar, body, foot);
   openTest(wrap); draw();
 }
 function paperView(T) {
@@ -1217,7 +1292,7 @@ function paperView(T) {
   const list = h('div', { class: 'plist' }, T.items.map((it, i) => h('div', { class: 'prow' }, h('span', { class: 'pn' }, it.no), h('div', { class: 'pq' }, it.big ? h('div', { class: 'bigemo sm' }, it.big) : null, h('div', {}, richText(it.q)),
     it.t === 'mc' ? h('div', { class: 'opts sm' }, it.opts.map(o => h('button', { class: 'opt', onclick: e => { T.ans[i] = o; [...e.currentTarget.parentNode.children].forEach(c => c.classList.remove('on')); e.currentTarget.classList.add('on'); } }, o)))
       : (() => { const inp = h('input', { type: 'text', inputmode: 'text', autocomplete: 'off', 'aria-label': 'Answer for item ' + it.no, oninput: e => { T.ans[i] = e.target.value.replace(/-/g, MINUS); } }); inputs.push(inp); return inp; })()))));
-  wrap.append(topTest('Enter answers · ' + T.l.name, phaseLabel(T.phase) + ' · Form ' + T.form + ' · Level ' + T.level), h('div', { class: 'tbody scroll' }, h('p', { class: 'sub' }, 'Type what the learner wrote. Leave blank if there is no answer. Use / for fractions, e.g. 3/4.'), list),
+  wrap.append(topTest('Enter answers · ' + T.l.name, phaseLabel(T.phase) + ' · Form ' + T.form + (T.form === 'C' ? '' : ' · Level ' + T.level)), h('div', { class: 'tbody scroll' }, h('p', { class: 'sub' }, 'Type what the learner wrote. Leave blank if there is no answer. Use / for fractions, e.g. 3/4.'), list),
     h('div', { class: 'tfoot' }, h('button', { class: 'btn primary wide', onclick: () => finishNumeracy(T) }, 'Score this test')));
   openTest(wrap);
 }
@@ -1228,6 +1303,7 @@ function printNum(l, phase, level) {
   document.body.classList.add('printing-test'); setTimeout(() => { window.print(); document.body.classList.remove('printing-test'); }, 100);
 }
 function finishNumeracy(T) {
+  if (T.form === 'C') return finishFormC(T);
   setKey(null);
   const marks = T.items.map((it, i) => isCorrect(it, T.ans[i])); const raw = marks.filter(Boolean).length; const total = T.items.length; const pct = round1(raw / total * 100);
   const fl = h('input', { type: 'number', min: '0', max: '99', inputmode: 'numeric', placeholder: 'Optional' });
@@ -1242,6 +1318,48 @@ function finishNumeracy(T) {
     h('p', { class: 'sub' }, 'A ○ marks an item to review with the learner. Correct answers are not shown so Form ' + (T.phase === 'pre' ? 'A' : 'B') + ' stays fair.'),
     h('label', { class: 'fld' }, h('span', {}, 'Addition facts in 1 minute (optional, timed by you)'), fl)),
     h('div', { class: 'tfoot' }, h('button', { class: 'btn', onclick: () => { runNumeracy(T.l, T.phase, T.level, T.mode); } }, 'Redo'), h('button', { class: 'btn primary', onclick: () => { res.fluency = fl.value === '' ? '' : Number(fl.value); addOp('result', res); toast('Saved'); closeTest(); } }, 'Save result')));
+  openTest(wrap);
+}
+
+/* ================= FORM C TEST (v1.11) ================= */
+/* The skills of the worksheets the learner practised since the pretest, most recent first. Worksheets without a generator (shapes, calendars...) give none. */
+function fcSkillList(l) {
+  const pre = D().results[rkey(l.id, 'numeracy', 'pre')]; const from = pre && pre.date ? String(pre.date) : '';
+  const rows = D().tracker.filter(t => t.learner_id === l.id && t.domain === 'math' && !Number(t.absent) && !isAlt(t) && Number(t.worksheet) > 0 && entrySet(t) && String(t.date) >= from).sort((a, b) => (a.date + a.created_at < b.date + b.created_at ? 1 : -1));
+  const out = []; rows.forEach(t => fcSkillsOf(entrySet(t), Number(t.worksheet)).forEach(s => { if (out.indexOf(s) < 0) out.push(s); })); return out;
+}
+function sheetFormC(id) {
+  const l = learnerById(id); if (!l) return; const sk = fcSkillList(l); const items = genFormC(l.id, l.grade, sk); const done = D().tracker.filter(t => t.learner_id === id && isFc(t)).sort((a, b) => (a.date + a.created_at < b.date + b.created_at ? 1 : -1));
+  let mode = 'device'; const mb = h('div', { class: 'seg' }, [['device', 'Learner answers on this phone'], ['paper', 'Enter answers from paper']].map(([k, t]) => h('button', { class: k === mode ? 'on' : '', onclick: e => { mode = k; [...mb.children].forEach(c => c.classList.remove('on')); e.currentTarget.classList.add('on'); } }, t)));
+  const used = []; items.forEach(it => { if (used.indexOf(it.fsid) < 0) used.push(it.fsid); });
+  openSheet(h('div', { class: 'stack' }, h('h2', {}, 'Form C test'), h('p', { class: 'sub' }, l.name + ' · Grade ' + l.grade),
+    h('p', { class: 'hint' }, 'Form C asks about the skills this learner practised in the ARAL worksheets since the pretest. It shows what was learned. It has no pretest to compare with, so it does not change the Form B gain; the Division report shows it separately. Give it after the learner has finished the Form B posttest.'),
+    done.length ? h('p', { class: 'warn' }, 'Form C was already saved for this learner (' + fcLine(done[0]) + ' on ' + done[0].date + '). Doing it again saves another result. If the earlier one was a mistake, delete it in Saved sessions.') : null,
+    items.length ? h('div', { class: 'tries' }, h('strong', {}, items.length + ' questions on ' + used.length + ' skill' + (used.length === 1 ? '' : 's') + ':'), h('ul', {}, used.map(s => h('li', {}, FC_SKILLS[s][0])))) : h('p', { class: 'warn' }, 'This learner has no logged ARAL math worksheet that Form C can test yet. Worksheets about shapes, calendars, angles, solid figures or probability are not tested here. Log worksheets first, or use Form B only.'),
+    items.length ? mb : null,
+    items.length ? h('div', { class: 'two' }, h('button', { class: 'btn', onclick: () => printFormC(l) }, 'Print the test'), h('button', { class: 'btn primary', onclick: () => { closeSheet(); runFormC(l, mode); } }, 'Start')) : null));
+}
+function runFormC(l, mode) {
+  const items = genFormC(l.id, l.grade, fcSkillList(l)); if (!items.length) { toast('No Form C questions yet'); return; }
+  const T = { l, phase: 'post', form: 'C', level: Math.min(Math.max(Number(l.grade) || 1, 1), 10), mode, items, ans: items.map(() => ''), i: 0, t0: Date.now() };
+  mode === 'paper' ? paperView(T) : deviceView(T);
+}
+function printFormC(l) {
+  const items = genFormC(l.id, l.grade, fcSkillList(l)); if (!items.length) { toast('No Form C questions yet'); return; } const root = $('#printRoot'); root.innerHTML = '';
+  root.append(h('h2', {}, 'Numeracy Form C'), h('p', {}, 'Name: ' + l.name + '      Grade: ' + l.grade + '      Date: ' + todayISO()),
+    h('ol', { class: 'pitems' }, items.map(it => h('li', {}, it.big ? h('div', { class: 'bigemo sm' }, it.big) : null, h('div', {}, richText(it.q)), it.t === 'mc' ? h('div', {}, it.opts.map(o => '☐ ' + o + '    ')) : h('div', { class: 'pline' }, 'Answer: ____________')))));
+  document.body.classList.add('printing-test'); setTimeout(() => { window.print(); document.body.classList.remove('printing-test'); }, 100);
+}
+function finishFormC(T) {
+  setKey(null);
+  const marks = T.items.map((it, i) => isCorrect(it, T.ans[i])); const raw = marks.filter(Boolean).length; const total = T.items.length; const wrap = h('div', { class: 'tview' });
+  const per = {}; T.items.forEach((it, i) => { const o = per[it.fsid] = per[it.fsid] || { r: 0, n: 0 }; o.n++; if (marks[i]) o.r++; });
+  const note = 'alt:1;fc:1;fs:' + T.items.map(it => it.fsid).join('.') + ';fm:' + marks.map(m => (m ? 1 : 0)).join('');
+  wrap.append(h('div', { class: 'tbody scroll' }, h('div', { class: 'score' }, raw === total ? h('span', { class: 'star', 'aria-hidden': 'true' }, '★') : null, h('div', { class: 'big' }, raw + ' / ' + total), h('p', {}, T.l.name + ' · Form C · ' + Math.round(round1(raw / total * 100)) + '%')),
+    h('div', { class: 'marks' }, T.items.map((it, i) => h('span', { class: 'mk ' + (marks[i] ? 'good' : 'bad'), title: 'Item ' + it.no }, marks[i] ? it.no : '○' + it.no))),
+    h('div', { class: 'tries' }, h('strong', {}, 'By skill'), h('ul', {}, Object.keys(per).map(k => h('li', {}, FC_SKILLS[k][0] + ': ' + per[k].r + ' of ' + per[k].n)))),
+    h('p', { class: 'sub' }, 'Skills with a ○ are worth reviewing with the learner. Correct answers are not shown.')),
+    h('div', { class: 'tfoot' }, h('button', { class: 'btn', onclick: () => { runFormC(T.l, T.mode); } }, 'Redo'), h('button', { class: 'btn primary', onclick: () => { addOp('tracker', { entry_id: uid(), learner_id: T.l.id, tutor_id: P.session.tutor_id, date: todayISO(), domain: 'math', worksheet: '', tri: 0, circ: 0, retries: 0, absent: 0, note, created_at: new Date().toISOString() }); toast('Saved'); closeTest(); } }, 'Save result')));
   openTest(wrap);
 }
 
@@ -1390,6 +1508,10 @@ const setLabel = n => (n === 7 ? 'G7-8' : n === 9 ? 'G9-10' : 'G' + n);
 const entrySet = t => { const m = /set:G(\d+)/.exec(t.note || ''); return m ? canonSet(Number(m[1])) : null; };
 /* Other materials: the tutor taught with something other than the ARAL worksheets or activity sheets. It is saved as a normal tracker row with note alt:1 (no worksheet number, no triangle or circle), so it counts as a day present but never moves the worksheet, the star count or the redo count. */
 const isAlt = t => /(?:^|;)alt:1(?:;|$)/.test(t.note || '');
+/* v1.11: a Form C test is saved as a Tracker row with alt:1 (so it never counts as a star or triangle) and fc:1. */
+const isFc = t => /(?:^|;)fc:1(?:;|$)/.test(t.note || '');
+const fcMarks = t => { const m = /(?:^|;)fm:([01]*)/.exec(t.note || ''); return m ? m[1] : ''; };
+const fcLine = t => { const m = fcMarks(t); return m.replace(/0/g, '').length + ' of ' + m.length + ' right'; };
 const altClean = (s, n) => String(s == null ? '' : s).replace(/[;:\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n); /* ; and : are the separators of the note, so they are never kept from typed text */
 const altField = (t, k) => { const m = new RegExp('(?:^|;)' + k + ':([^;]*)').exec(t.note || ''); return m ? m[1].trim() : ''; };
 const ALT_PERF = [['vg', 'Very good'], ['g', 'Good'], ['f', 'Fair'], ['nh', 'Needs help'], ['nl', 'Needs a lot of help']];
@@ -1454,7 +1576,7 @@ function scrSession() {
   gSorted.forEach(l => {
     if (gnum(l) !== gLast) { gLast = gnum(l); box.append(gradeHead(gLast, gCnt[gLast])); }
     const mine = todays.filter(t => t.learner_id === l.id && t.domain === S.sdom); const absent = todays.some(t => t.learner_id === l.id && Number(t.absent));
-    const altM = mine.filter(isAlt); const realM = mine.filter(t => !isAlt(t)); const stars = realM.filter(t => !Number(t.absent) && !Number(t.tri) && !Number(t.circ)).length; const le = lastEntry(l.id, S.sdom);
+    const altM = mine.filter(t => isAlt(t) && !isFc(t)); const realM = mine.filter(t => !isAlt(t)); const stars = realM.filter(t => !Number(t.absent) && !Number(t.tri) && !Number(t.circ)).length; const le = lastEntry(l.id, S.sdom);
     const open = S.openRow === l.id;
     box.append(h('div', { class: 'srow' + (open ? ' open' : '') },
       h('button', { class: 'shead', onclick: () => { S.openRow = open ? null : l.id; render(); } }, h('span', { class: 'av ' + (l.group === 'pullout' ? 'pull' : '') }, initials(l.name)), h('span', { class: 'rn' }, h('strong', {}, l.name), h('small', {}, 'Gr ' + l.grade + ' \u00B7 ' + (le ? 'Last: ' + wsLabel(le) + (Number(le.tri) || Number(le.circ) ? (S.sdom === 'reading' ? (Number(le.circ) ? ' (not yet)' : ' (needed help)') : ' (needs redo)') : ' ★') : 'No entries yet'))),
