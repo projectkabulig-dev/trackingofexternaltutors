@@ -47,6 +47,7 @@ details{border:1px solid var(--line);border-radius:var(--r);background:#fff}summ
 .btn.bad{background:var(--card);border-color:var(--coral);color:var(--coral);font-size:20px;flex:1}
 .btn.mic{border-style:dashed;border-color:var(--ink2);color:var(--ink2);font-weight:400;align-self:center}
 .btn.alt{background:#EFE9FB;border-color:#6B4FC8;color:#4A2FA3}.btn.alt:hover{background:#E4DAF8}
+.skl{display:flex;flex-direction:column;gap:8px;max-height:34vh;overflow:auto;border:1.5px solid var(--line);border-radius:var(--r);padding:10px 12px;background:#fff}
 .btn.wide{width:100%}
 a.btn{text-decoration:none;color:var(--ink)}
 .stack.tight{gap:8px}
@@ -712,7 +713,7 @@ const PRACTICE = {"Basic": {"W1S1": {"name": "Magsanay Tayo", "lang": "Filipino"
 
 /* ================= CONFIG ================= */
 const CONFIG = {
-  VERSION: '1.9',
+  VERSION: '1.10',
   // Paste each district's Apps Script web app URL (ends with /exec) in "url".
   DISTRICTS: [
     { code: 'ALC', name: 'Alcantara', url: 'https://script.google.com/macros/s/AKfycbzzJn38tC46ftiXdXrjgndOM7s7CfcAhcEUpKdnW1SyhlOW3GBUXtBG9D9QllZTOUHN8g/exec' },
@@ -1118,7 +1119,7 @@ function sheetBulk() {
 /* Saved sessions of one learner: the tutor can take out an entry that was saved by mistake. Only his own entries are here; the district sheet keeps a copy in the tab Tracker_removed. */
 function entryLabel(t) {
   if (Number(t.absent)) return (t.domain === 'reading' ? 'Reading' : 'Math') + ' · Absent';
-  if (isAlt(t)) return (t.domain === 'reading' ? 'Reading' : 'Math') + ' · Other material: ' + (altField(t, 'am') || '-') + ' · ' + (altPerfName(altField(t, 'pf')) || '-');
+  if (isAlt(t)) return (t.domain === 'reading' ? 'Reading' : 'Math') + ' · Other material: ' + (altField(t, 'am') || '-') + ' · ' + (altPerfName(altField(t, 'pf')) || '-') + (altSk(t).length ? ' · Skills: ' + altSk(t).join(', ') : '');
   if (t.domain === 'reading' && ciOf(t)) return 'Reading · Check-in ' + ciOf(t); /* a check-in has no star or triangle */
   if (t.domain === 'reading') return 'Reading · ' + readLabel(t) + ' · ' + (Number(t.circ) ? '\u25CB Not yet' : Number(t.tri) ? '\u25B3 Needed help' : '\u2605 Did well');
   const st = entrySet(t); const tri = Number(t.tri) || 0, circ = Number(t.circ) || 0;
@@ -1395,7 +1396,11 @@ const ALT_PERF = [['vg', 'Very good'], ['g', 'Good'], ['f', 'Fair'], ['nh', 'Nee
 const ALT_MATS = ['Own worksheet or activity sheet', 'Textbook or book', 'Flashcards or cards', 'Game or hands-on activity', 'Online or printed material from another source', 'Other'];
 const ALT_WHYS = ['The ARAL material is too hard for the learner', 'The ARAL material is not available', 'The ARAL material does not fit the learner\u2019s level', 'The learner needed to review an earlier lesson', 'Other'];
 const altPerfName = c => { const x = ALT_PERF.find(q => q[0] === c); return x ? x[1] : ''; };
-const altNote = (mat, why, perf) => 'alt:1;am:' + altClean(mat, 110) + ';ar:' + altClean(why, 110) + ';pf:' + perf;
+const altNote = (mat, why, perf, sk) => 'alt:1;am:' + altClean(mat, 110) + ';ar:' + altClean(why, 110) + ';pf:' + perf + (sk && sk.length ? ';sk:' + sk.join('.') : ''); /* longest note: 239 + 30 = 269 characters, under the 300 of the district sheet */
+/* v1.10, Math only: the skills the other material covered, stored as the numbers (1 to 12) of the pretest items that test them, so the Summary can count those items as taught. The numbers follow the learner's pretest level, or the grade level when there is no pretest yet. */
+const skLevel = l => { const pre = D().results[rkey(l.id, 'numeracy', 'pre')]; const lv = pre ? Number(pre.test_level) : 0; return lv >= 1 && lv <= 10 ? lv : Math.min(Math.max(Number(l.grade) || 1, 1), 10); };
+const skIdx = (l, names) => { const out = []; (PLACE[skLevel(l)] || []).forEach((p, i) => { if (names.indexOf(p[2]) >= 0) out.push(i + 1); }); return out; };
+const altSk = t => { const m = /(?:^|;)sk:([0-9.]+)/.exec(t.note || ''); const l = learnerById(t.learner_id); if (!m || !l) return []; const pl = PLACE[skLevel(l)] || []; const seen = []; m[1].split('.').forEach(x => { const p = pl[Number(x) - 1]; if (p && seen.indexOf(p[2]) < 0) seen.push(p[2]); }); return seen; };
 /* Reading sessions: Key Stage 1 is counted by session number; Key Stages 2 and 3 have Basic and Plus, counted by week (1 to 8) and session (1 to 4). The tutor chooses the key stage, like the worksheet set in Math. */
 const ksOf = g => (Number(g) <= 3 ? 1 : Number(g) <= 6 ? 2 : 3);
 const KS_NAME = { 1: 'Key Stage 1 (Grades 1 to 3)', 2: 'Key Stage 2 (Grades 4 to 6)', 3: 'Key Stage 3 (Grades 7 to 10)' };
@@ -1547,13 +1552,16 @@ function sheetAlt(dom, date, learners, group) {
   const whySel = h('select', { id: 'altWhySel' }, [['', 'Choose the main reason']].concat(ALT_WHYS.map(t => [t, t])).map(([v, t]) => h('option', { value: v }, t)));
   const whyTxt = h('input', { id: 'altWhyTxt', type: 'text', maxlength: '90', placeholder: 'Write the reason' });
   let lastWhy = ''; const fillWhy = () => { const v = whySel.value; if (!whyTxt.value.trim() || whyTxt.value === lastWhy) whyTxt.value = v === 'Other' ? '' : v; lastWhy = v === 'Other' ? '' : v; }; whySel.onchange = fillWhy;
+  const skSel = []; const skBox = h('div', { class: 'skl', id: 'altSkills' });
+  if (math) { const names = []; rows.forEach(r => (PLACE[skLevel(r.l)] || []).forEach(p => { if (names.indexOf(p[2]) < 0) names.push(p[2]); })); names.sort(); names.forEach(nm => skBox.append(h('label', { class: 'chk' }, h('input', { type: 'checkbox', value: nm, onchange: e => { const i = skSel.indexOf(nm); if (e.target.checked && i < 0) skSel.push(nm); if (!e.target.checked && i >= 0) skSel.splice(i, 1); } }), h('span', {}, nm)))); }
+  const skField = math ? h('div', { class: 'fld' }, h('span', {}, 'Which skills did the material cover? (optional)'), skBox, h('p', { class: 'hint' }, 'Tick the skills from the pretest that the material taught. The report then counts those test items as taught, even though no ARAL worksheet was used. Leave empty if you are not sure.')) : null;
   const all = group ? h('label', { class: 'fld' }, h('span', {}, 'Same result for everyone (you can still change a learner)'), h('select', { id: 'altAll', onchange: e => { const v = e.target.value; if (v) rows.forEach(r => { r.st = v; }); draw(); e.target.value = ''; } }, [['', 'Choose…']].concat(ALT_PERF).map(([v, t]) => h('option', { value: v }, t)))) : null;
   draw();
   openSheet(h('div', { class: 'stack' }, h('h2', {}, 'Other material (not ARAL)'),
     h('p', { class: 'sub' }, (math ? 'Math' : 'Reading') + ' · ' + date + (group ? ' · ' + rows.length + ' learners' : ' · ' + rows[0].l.name) + '. Use this when you taught with something other than the ARAL worksheets or activity sheets. It does not change the worksheet number or the ★ count.'),
     h('label', { class: 'fld' }, h('span', {}, 'What kind of material did you use?'), matSel), h('label', { class: 'fld' }, h('span', {}, 'What material did you give?'), matTxt),
     h('label', { class: 'fld' }, h('span', {}, 'Why did you not use the ARAL material?'), whySel), h('label', { class: 'fld' }, h('span', {}, 'Reason (write it in your own words)'), whyTxt),
-    all, h('p', { class: 'hint' }, group ? 'How did each learner perform in answering the material?' : 'How did the learner perform in answering the material?'), list, msg,
+    skField, all, h('p', { class: 'hint' }, group ? 'How did each learner perform in answering the material?' : 'How did the learner perform in answering the material?'), list, msg,
     h('button', { class: 'btn primary wide', id: 'altSave', onclick: () => {
       msg.textContent = ''; const mat = altClean(matSel.value + ' - ' + matTxt.value, 110), why = altClean(whyTxt.value, 110);
       if (!matSel.value) { msg.textContent = 'Choose the kind of material.'; return; }
@@ -1562,7 +1570,7 @@ function sheetAlt(dom, date, learners, group) {
       if (why.length < 3) { msg.textContent = 'Write the reason.'; return; }
       const todo = rows.filter(r => r.st && r.st !== 'skip'); if (!todo.length) { msg.textContent = group ? 'Choose a result for at least one learner.' : 'Choose how the learner did.'; return; }
       todo.forEach(r => { const ab = r.st === 'absent';
-        addOp('tracker', { entry_id: uid(), learner_id: r.l.id, tutor_id: P.session.tutor_id, date, domain: dom, worksheet: '', tri: 0, circ: 0, retries: 0, absent: ab ? 1 : 0, note: ab ? '' : altNote(mat, why, r.st), created_at: new Date().toISOString() }); });
+        addOp('tracker', { entry_id: uid(), learner_id: r.l.id, tutor_id: P.session.tutor_id, date, domain: dom, worksheet: '', tri: 0, circ: 0, retries: 0, absent: ab ? 1 : 0, note: ab ? '' : altNote(mat, why, r.st, math ? skIdx(r.l, skSel) : []), created_at: new Date().toISOString() }); });
       closeSheet(); S.openRow = null; render(); toast(todo.length + (todo.length === 1 ? ' entry' : ' entries') + ' saved (other material)');
     } }, 'Save'), h('button', { class: 'btn wide', onclick: closeSheet }, 'Cancel')));
 }
@@ -1849,7 +1857,8 @@ function sheetHelp(open) {
       h('ol', {}, h('li', {}, 'Open Today and pick the date and subject.'), h('li', {}, 'For Reading: tap a learner, choose Basic or Plus (Grade 4 and up), then the week and session you taught. The marks are optional: if you type the score of the LAS the learner did in Let\u2019s Check (items in the LAS and items correct), the app sets the mark for you and keeps the learner\u2019s LAS average. In Key Stage 2 the app shows the practice activity of the session (for example Magsanay Tayo, with its workbook page) and asks for a score only when the activity has written items. In Key Stage 1, choose Progress Check-in on the day you give it and enter the totals from the scoring sheet.'), h('li', {}, 'Tap a learner. Set the worksheet number (it starts at the next one).'), h('li', {}, 'Set △ and ○ from your checking. Tap Save worksheet, or Absent.'))),
     sec('altmat', 'When you used other materials',
       h('p', {}, 'If the ARAL worksheet or activity sheet was too hard or you did not have it, and you taught with something else, do not log an ARAL worksheet. On Today, tap the learner (or Log the whole group), then tap \u201CUsed other material (not ARAL)\u201D. The date and subject are the ones you picked. Write the material you gave and the reason, then choose how the learner did in answering it: Very good, Good, Fair, Needs help, or Needs a lot of help.'),
-      h('p', {}, 'This does not change the worksheet number or the \u2605 count, so the learner continues from the same ARAL worksheet next time. Your coordinator can see how many sessions used other materials.')),
+      h('p', {}, 'This does not change the worksheet number or the \u2605 count, so the learner continues from the same ARAL worksheet next time. Your coordinator can see how many sessions used other materials.'),
+      h('p', {}, 'New in version 1.10 (Math): you can also tick the skills the material covered (for example Adding fractions). It is optional. The Division report then knows which pretest topics the learner practiced, even with no ARAL worksheet.')),
     sec('subj', 'Math only, Reading only, or both',
       h('p', {}, 'Some learners are tutored in only one subject. When you add a learner, choose what he or she is tutored in. For learners you added before, the app shows one list the first time you open it: everyone starts on Math and Reading, and you change only the learners who are different. You can change it any time in Edit learner.'),
       h('p', {}, 'A Reading only learner does not appear in the Math worksheets or in the Numeracy test, and a Math only learner does not appear in Reading. Coverage numbers in your coordinator\u2019s report count only the learners tutored in that subject.')),
